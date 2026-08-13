@@ -16,7 +16,7 @@
         <a href="index.html">Home</a>
         <a href="drone-camera.html">Drone camera</a>
         <a href="3d-terrain.html">3D terrain</a>
-        <a href="limitations.html">Limitations</a>
+        <a href="limitations.html">What to plan for</a>
         <a href="photoreal-maps.html">Photoreal maps</a>
         <a href="choosing.html" class="active">Choosing a front end</a>
         <a href="calculator/index.html">Calculator</a>
@@ -39,7 +39,7 @@
       <li><a href="#start-here-the-front-end-is-not-the-data-strategy">Start here: the front end is not the data strategy</a></li>
       <li><a href="#the-three-questions-that-actually-decide-it">The three questions that actually decide it</a></li>
       <li><a href="#where-each-one-is-genuinely-strongest">Where each one is genuinely strongest</a></li>
-      <li><a href="#what-it-costs-you-to-pick-the-app">What it costs you to pick the app</a></li>
+      <li><a href="#what-you-take-on-when-you-pick-the-app">What you take on when you pick the app</a></li>
       <li><a href="#worked-examples">Worked examples</a></li>
       <li><a href="#the-summary-id-actually-give">The summary I'd actually give</a></li>
     </ul>
@@ -129,18 +129,20 @@ Unlimited UI freedom — any npm library, WebGL, custom charts, an actual 3D sce
 analytics-scale data with no copy and no extra per-user licence for the front end. And a repo: the
 thing can be cloned, tested in CI, and handed to someone else.</p>
 <hr />
-<h2 id="what-it-costs-you-to-pick-the-app">What it costs you to pick the app</h2>
-<p>Being honest about this is what makes the rest credible.</p>
+<h2 id="what-you-take-on-when-you-pick-the-app">What you take on when you pick the app</h2>
+<p>Being clear about this is what makes the rest credible — and all five have a known answer.</p>
 <ul>
-<li><strong>Server-side logic is not solved.</strong> There is no dependable server-side function inside the app
-  today — you add a Fabric User Data Function or an Azure Container App. Both work; both are another
-  moving part. (Detail: <em>Fabric Apps — the three limitations</em>.)</li>
-<li><strong>The shell is public.</strong> Static hosting serves the bundle anonymously; the <em>data</em> stays
-  Entra-gated, but the layout does not. If the layout itself is confidential, stop here.</li>
-<li><strong>The hostname isn't yours.</strong> No custom domain, and it can change if the deployment binding is lost.</li>
-<li><strong>It can't be switched off.</strong> Hosting an app turns a schedulable capacity into a 24/7 one, which is
-  usually the real cost — not the CU the app consumes.</li>
-<li><strong>You own the upgrade.</strong> Preview surfaces move. There is no SLA behind your code.</li>
+<li><strong>Server-side logic lives outside the app.</strong> There's no server-side function inside the app yet, so
+  you add a Fabric User Data Function or an Azure Container App. Both work well; both are another
+  moving part. (Detail: <em>Fabric Apps — three things to plan for</em>.)</li>
+<li><strong>The shell is served publicly.</strong> Static hosting serves the bundle anonymously; the <em>data</em> stays
+  Entra-gated, but the layout does not. If the layout itself is confidential, pick another surface.</li>
+<li><strong>The hostname is platform-owned.</strong> No custom domain today, and it can change if the deployment
+  binding is lost — keep <code>.deployments.json</code> and it stays put.</li>
+<li><strong>It's always on.</strong> Hosting an app turns a schedulable capacity into a 24/7 one. Size the capacity
+  to the app and this is cheap; leave it oversized and the uptime is what you're paying for, not the
+  CU the app consumes.</li>
+<li><strong>You own the upgrade.</strong> Preview surfaces move, and there's no SLA behind code you wrote yourself.</li>
 </ul>
 <hr />
 <h2 id="worked-examples">Worked examples</h2>

@@ -31,9 +31,9 @@ PAGES = {
         "realistic-3d-terrain.md",
     ),
     "limitations": (
-        "Limitations",
-        "Fabric Apps — the three limitations",
-        "Rayfin functions, the public URL, and capacity utilisation. Measured, not felt.",
+        "What to plan for",
+        "Fabric Apps — three things to plan for",
+        "Rayfin functions, the public URL, and capacity sizing. Measured, not assumed — each with the route that works today.",
         "fabric-app-limits.md",
     ),
     "photoreal-maps": (

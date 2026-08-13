@@ -97,7 +97,7 @@
   crown radius = where canopy falls to 45 % of apex; taper = canopy at 0.18×height. Taper < 0.62 ⇒ conical.
   **Validate the classifier**: neighbours of a conifer were 47.1 % conifer vs a 20.5 % base rate, and a
   **shuffled-label control gave 20.5/20.5** ⇒ the clustering is real (planted stands). Call it crown
-  **form**, not species. OSM `leaf_type` is useless here (117/183 polygons untagged, zero needleleaved).
+  **form**, not species. OSM `leaf_type` doesn't help here (117/183 polygons untagged, zero needleleaved).
 
 ## Land cover + roads (class raster)
 - Rasterise OSM polygons with **PIL `ImageDraw.polygon`** (no GDAL). **Paint largest area first** so small

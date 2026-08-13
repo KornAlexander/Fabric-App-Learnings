@@ -72,19 +72,21 @@ thing can be cloned, tested in CI, and handed to someone else.
 
 ---
 
-## What it costs you to pick the app
+## What you take on when you pick the app
 
-Being honest about this is what makes the rest credible.
+Being clear about this is what makes the rest credible — and all five have a known answer.
 
-- **Server-side logic is not solved.** There is no dependable server-side function inside the app
-  today — you add a Fabric User Data Function or an Azure Container App. Both work; both are another
-  moving part. (Detail: *Fabric Apps — the three limitations*.)
-- **The shell is public.** Static hosting serves the bundle anonymously; the *data* stays
-  Entra-gated, but the layout does not. If the layout itself is confidential, stop here.
-- **The hostname isn't yours.** No custom domain, and it can change if the deployment binding is lost.
-- **It can't be switched off.** Hosting an app turns a schedulable capacity into a 24/7 one, which is
-  usually the real cost — not the CU the app consumes.
-- **You own the upgrade.** Preview surfaces move. There is no SLA behind your code.
+- **Server-side logic lives outside the app.** There's no server-side function inside the app yet, so
+  you add a Fabric User Data Function or an Azure Container App. Both work well; both are another
+  moving part. (Detail: *Fabric Apps — three things to plan for*.)
+- **The shell is served publicly.** Static hosting serves the bundle anonymously; the *data* stays
+  Entra-gated, but the layout does not. If the layout itself is confidential, pick another surface.
+- **The hostname is platform-owned.** No custom domain today, and it can change if the deployment
+  binding is lost — keep `.deployments.json` and it stays put.
+- **It's always on.** Hosting an app turns a schedulable capacity into a 24/7 one. Size the capacity
+  to the app and this is cheap; leave it oversized and the uptime is what you're paying for, not the
+  CU the app consumes.
+- **You own the upgrade.** Preview surfaces move, and there's no SLA behind code you wrote yourself.
 
 ---
 

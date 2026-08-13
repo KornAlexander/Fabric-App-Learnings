@@ -34,7 +34,7 @@
     </p>
     <div class="btn-row">
       <a class="btn btn-primary" href="drone-camera.html">Start with the drone camera</a>
-      <a class="btn btn-outline" href="limitations.html">Or the limitations</a>
+      <a class="btn btn-outline" href="limitations.html">Or what to plan for</a>
     </div>
     <div class="badges">
       <span class="badge">Personal notes</span>
@@ -76,11 +76,12 @@
       </a>
 
       <a class="card card-link" href="limitations.html">
-        <div class="kicker">Limitations</div>
-        <h3>The three that bite</h3>
+        <div class="kicker">Plan for it</div>
+        <h3>The three to design around</h3>
         <p>
-          Server-side functions, the public URL, and capacity utilisation. Measured rather than felt —
-          including the one where a paused capacity is exactly the thing you're not allowed to do.
+          Server-side functions, the public URL, and capacity sizing. Measured rather than assumed —
+          each one with the route that works today, including the sizing decision that makes the
+          economics look very good indeed.
         </p>
         <span class="more">Read the playbook →</span>
       </a>
@@ -123,9 +124,9 @@
   <div class="wrap">
     <h2>The capacity calculator</h2>
     <p class="lead">
-      A Fabric App barely consumes any capacity units. That isn't the problem. The problem is that
-      hosting one means you can no longer pause the capacity — so you buy an always-on SKU for a
-      workload that uses a fraction of it. This works out what that actually costs.
+      A Fabric App is remarkably cheap to run — it barely touches capacity units. The thing worth
+      planning for is that it's always on, so the capacity behind it needs to be too. Size that
+      capacity to the app and the economics are excellent; this works out where the line sits.
     </p>
 
     <div class="callout danger">
@@ -137,7 +138,7 @@
 
     <div class="btn-row">
       <a class="btn btn-primary" href="calculator/index.html">Open the calculator</a>
-      <a class="btn btn-outline" href="limitations.html#3-pricing-low-capacity-utilisation-real-and-quantifiable">Why it exists</a>
+      <a class="btn btn-outline" href="limitations.html#3-pricing-capacity-utilisation-real-and-quantifiable">Why it exists</a>
     </div>
   </div>
 </section>

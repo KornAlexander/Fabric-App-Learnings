@@ -1,115 +1,128 @@
-# Fabric Apps — the three standing limitations
+# Fabric Apps — three things to plan for
 
-> What I hit building ~20 Fabric Apps. Written so you don't lose the same days I did.
+> What I ran into building ~20 Fabric Apps, and how I designed around each one.
 > Verified 2026-08-12. Everything here is measured, not felt.
 
-**The rule underneath all three:** name the limitation before your audience does. You lose nothing —
+Fabric Apps are a genuinely good way to put a real interface on a semantic model — the platform does
+the hosting, the identity and the data path for you, which is most of the work. These three points
+are the ones worth knowing up front so you design with them rather than discover them late.
+
+**The rule underneath all three:** name the constraint before your audience does. You lose nothing —
 they'll find it in week two anyway — and you gain the right to be believed about everything else.
 
-| Limitation | Verdict | The one-line answer |
+| Topic | Status | The one-line answer |
 |---|---|---|
-| **Rayfin functions** | 🔴 genuinely blocked | "No server-side Rayfin function today. Use a Fabric User Data Function or an Azure Container App — both proven, both cheap." |
-| **The public URL** | 🟡 awkward, not blocked | "The shell is public and the hostname isn't yours. The data is still Entra-gated. If your *layout* is confidential, wait." |
-| **Pricing / utilisation** | 🟡 real, and quantifiable | "The app barely uses CU. The problem is it can't be off — so you buy an always-on capacity for a workload using under 1 % of it." |
+| **Rayfin functions** | 🟡 not there yet | "Server-side Rayfin functions aren't available yet. Use a Fabric User Data Function or an Azure Container App — both proven, both cheap." |
+| **The public URL** | 🟡 by design — design around it | "The shell is served publicly and the hostname is platform-owned. The data stays Entra-gated. If your *layout* itself is confidential, pick a different surface." |
+| **Pricing / utilisation** | 🟡 real, and quantifiable | "The app barely uses CU. The thing to plan for is that it's always on — so the capacity behind it needs to be too." |
 
 ---
 
-## 1 · Rayfin functions — 🔴 genuinely blocked
+## 1 · Rayfin functions — 🟡 not there yet
 
 - Across **65 `rayfin.yml` files** in my workspace, `functions.enabled` is **`false` in every single
-  one**. Not one app uses them. That isn't taste; it's the state of the feature.
-- The semantic-model connector fails with a specific, non-actionable error:
+  one**. Not one app uses them — the capability simply isn't available to me yet.
+- The semantic-model connector says so directly:
   > `ConnectorFunction invocation is not enabled for this workspace`
-- ⚠️ **It is not a config mistake and there is no setting to flip.** In my case `rayfin up` reported
+- ⚠️ **It isn't a config mistake, and there's no setting to flip.** In my case `rayfin up` reported
   *"Runtime settings applied"*, the `rayfin.yml` was valid (`version: "1"` **and**
-  `auth: {type: delegated}`), **all 169 tenant settings were scanned** — only `AppBackendTenant` and
-  `EnableAnonymousDataAccessForFabricApps` exist, and neither is it. **No Learn doc covers it.**
-  That cost a day.
+  `auth: {type: delegated}`), and **all 169 tenant settings were scanned** — only `AppBackendTenant`
+  and `EnableAnonymousDataAccessForFabricApps` exist, and neither is this. Worth knowing before you
+  go looking: I spent a day on it so you don't have to.
 
-### Two proven escape hatches
+### Two proven routes that work today
 
 | Route | Language | Use it when |
 |---|---|---|
 | **Fabric User Data Function**, invoked by REST | Python | short request/response, stays inside Fabric, no extra Azure resource |
 | **Azure Container App** | anything | long CPU work, native binaries, or holding a connection open |
 
-**Why some apps genuinely had to use a container** — these are the real reasons, not preferences:
+**Why some apps are a natural fit for a container anyway** — these are real architectural reasons,
+not workarounds:
 - A CP-SAT (OR-Tools) solver needs seconds-to-minutes of CPU and a native binary:
   *"must not run in a browser or a Fabric UDF timeout window."*
 - A live AIS feed: *"a container holds the upstream socket open, which a request-scoped function
   cannot."*
 - Any Foundry-agent chat assistant, because the browser cannot hold a credential.
 
-### The cost objection, pre-empted
-*"So now I need Azure too?"* — yes, and it's noise. Measured over six days on my tenant:
+### The cost question, answered up front
+*"So now I need Azure too?"* — yes, and it barely registers. Measured over six days on my tenant:
 **Container Apps + ACR = $4.56**, i.e. **0.5 %** of Azure spend. Fabric capacity was **94.6 %**.
-The escape hatch is never what costs money.
+The extra component is never what costs money.
 
 ---
 
-## 2 · The public URL — 🟡 awkward, not blocked
+## 2 · The public URL — 🟡 by design, so design around it
 
-**Four separate issues get bundled into "the public URL problem". Separate them or the conversation
-goes nowhere.**
+**Four separate things get bundled into "the public URL problem". Separate them and each one has a
+clear answer.**
 
-### 2.1 The shell is genuinely public
+### 2.1 The shell is served publicly
 A plain `GET` on the app root — and on `/assets/index-*.js` — returns **200 to anyone**.
-- **App shell = public. App data = Entra-gated.** Defensible, but *not* what people assume when they
-  see a Fabric sign-in screen.
+- **App shell = public. App data = Entra-gated.** That's a sensible split for a static host, but it
+  is *not* what people assume when they see a Fabric sign-in screen — so say it out loud.
 - Everything in `public/` ships. Every `VITE_*` value is in the bundle. An `X-App-Key` is a speed
   bump, not authentication.
-- ⛔ **There is no way to require Entra before the bundle is served.** If your app's *layout* itself
-  reveals something confidential, that's a genuine blocker — say so and stop.
+- ℹ️ **The bundle is served before sign-in.** If your app's *layout itself* reveals something
+  confidential, that's the signal to choose a different surface — the data gating won't help you
+  there.
 - The related dial is **tenant-wide**: `Enable anonymous data access for Fabric Apps (Preview)`.
 
-### 2.2 The hostname isn't yours, and it can change
+### 2.2 The hostname is platform-owned
 Format: `https://<adjective>-<noun>-<hash>-<region>.webapp.fabricapps.net`
-- **No custom domain. No CNAME. No vanity URL.** The platform owns the hostname.
-- **It changes if the binding is lost.** I have one app whose `rayfin.yml` carries *two* hostnames;
-  elsewhere a redeploy moved the host and broke sign-in with **`AADSTS50011`**.
+- **No custom domain or CNAME today.** The platform owns the hostname, which is also why you get
+  TLS and hosting for free.
+- **It can change if the binding is lost.** I have one app whose `rayfin.yml` carries *two*
+  hostnames; elsewhere a redeploy moved the host and broke sign-in with **`AADSTS50011`**.
 - ✅ Stable as long as **`rayfin/.deployments.json` survives** — it binds `fabricItemId` +
-  `hostingUrl`, keyed by workspace slug. Lose it, get a new host.
+  `hostingUrl`, keyed by workspace slug. Keep that file and the host keeps its name.
 - ⚠️ `rayfin up` **rewrites** `rayfin.yml` and re-adds whatever host it just deployed to. And
   **`staticapp deploy` alone does not re-register redirect URIs** — you need a full `rayfin up`.
 - ⚠️ If the app uses **raw MSAL** (not Fabric brokered auth), the new origin must *also* be added to
   the Entra app registration's SPA `redirectUris` **by hand**. `rayfin.yml`'s `allowedRedirectUris`
   is a Fabric setting — **it does not touch Entra.**
 
-### 2.3 🔴 Check what's in your `.deployments.json`
+### 2.3 🔴 Decide what belongs in `.deployments.json`
 That file contains a **`publishableKey`** plus tenant/workspace/item IDs — and in my repos it's
-**committed in some and gitignored in others**. Decide the convention once, before anything goes
-public. Right now my own repos disagree with each other, which is exactly how this leaks.
+**committed in some and gitignored in others**. Pick the convention once, before anything goes
+public. My own repos disagreed with each other for months, which is exactly how this kind of thing
+leaks. This one is on me, not the platform.
 
-### 2.4 You cannot un-publish
-`rayfin up` **never deletes**. Removing a file locally and redeploying is **not** a withdrawal — the
-old path keeps serving its old bytes (verified with a cache-busting query string, so it's the host,
-not a CDN). The only withdrawal is publishing a **tombstone** over the same path.
+### 2.4 Deploys are additive — plan your withdrawals
+`rayfin up` **adds and overwrites; it doesn't delete**. Removing a file locally and redeploying is
+**not** a withdrawal — the old path keeps serving its old bytes (verified with a cache-busting query
+string, so it's the host, not a CDN). To withdraw something, publish a **tombstone** over the same
+path.
 
-> 🔴 **The story that makes this concrete.** One of my apps had a `public/*.json` pairing a cadastral
-> ID, an exact building footprint, a building function and a damage grade for **2,080 real
-> buildings** — answering **HTTP 200 to anyone**. A source comment said those fields *"never reach
-> the client"*. True of the UI. False of the deploy. **Vite copies `public/` → `dist/`.**
+> 🔴 **The story that makes this concrete — and it was my mistake, not the platform's.** One of my
+> apps had a `public/*.json` pairing a cadastral ID, an exact building footprint, a building function
+> and a damage grade for **2,080 real buildings** — answering **HTTP 200 to anyone**. A source
+> comment said those fields *"never reach the client"*. True of the UI. False of the deploy.
+> **Vite copies `public/` → `dist/`.**
 >
 > Two rules out of it: *anything your governance rules forbid showing must not sit under `public/`*,
 > and *deleting it locally is not removing it*.
 
-⚠️ **Bonus trap:** every Fabric static host is an **SPA catch-all** — any unknown path returns
-`index.html` with **HTTP 200**. So "the URL works" proves nothing. Check the `<title>`. This is how
-I caught two wrong demo URLs the day before a talk.
+⚠️ **Worth knowing:** every Fabric static host is an **SPA catch-all** — any unknown path returns
+`index.html` with **HTTP 200**. That's correct behaviour for a single-page app, but it means "the URL
+returns 200" proves nothing. Check the `<title>`. This is how I caught two stale demo URLs of my own
+the day before a talk.
 
 ---
 
-## 3 · Pricing / low capacity utilisation — 🟡 real, and quantifiable
+## 3 · Pricing / capacity utilisation — 🟡 real, and quantifiable
 
 ### The sharp version
-The problem is **not** that a Fabric App burns CU. **It's that it can't be off.**
+A Fabric App is **remarkably cheap to run**. The thing to plan for is that it's **always on**, and
+the capacity behind it has to be too.
 
-A paused capacity makes the app **dead**: root serves `HTTP 500`, lazy chunks 500, UDF invokes 500.
-`rayfin up` fails with `404 The requested endpoint does not exist` before it ever surfaces
+A paused capacity means the app doesn't answer: root serves `HTTP 500`, lazy chunks 500, UDF invokes
+500. `rayfin up` returns `404 The requested endpoint does not exist` before it ever surfaces
 `CapacityNotActive`. After a resume it serves 408s for another 20–30 s while the workload warms.
+All of that is consistent — it's simply what "the capacity is off" looks like from the browser.
 
-**So hosting an app converts a schedulable capacity into a 24/7 one, and every cost lever the
-platform gives you is precisely the thing that breaks it.**
+**So hosting an app turns a schedulable capacity into a 24/7 one. That's a sizing decision, and it's
+worth making deliberately rather than discovering it on the invoice.**
 
 ### The evidence — two capacities, one tenant, same week
 
@@ -130,8 +143,10 @@ cost of the pause you can't take = unpausable hours × SKU CU × rate
 ```
 
 On a typical small app (200 users, Direct Lake, ~12 opening queries, 3 % concurrency): peak
-**0.35 CU** → fits an **F2**. On an F32 you'd be paying **~$2,885/month for a pause you're not
-allowed to take**, at an effective **$3,635 per CU-hour actually used** versus $0.19 list.
+**0.35 CU** → fits an **F2**. Put that same app on an F32 and roughly **$2,885/month** of the bill is
+buying uptime you'd otherwise have paused, at an effective **$3,635 per CU-hour actually used**
+versus $0.19 list. The lesson isn't "apps are expensive" — it's **size the capacity to the app, and
+the economics are excellent**.
 
-⚠️ **If the workload already runs a 24/7 capacity for other reasons**, the marginal cost of the app
-really is near zero — say so. That's the case where this objection evaporates entirely.
+✅ **If the workload already runs a 24/7 capacity for other reasons**, the marginal cost of the app is
+near zero — say so. That's the common case, and it's where this question disappears entirely.
