@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The drone camera · Fabric App Learnings</title>
+<meta name="description" content="One file, eight apps, two renderers — the latch design, the hand-back bug, and the Cesium traps." />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Fabric App <span>Learnings</span></a>
+    <div class="links">
+        <a href="index.html">Home</a>
+        <a href="drone-camera.html" class="active">Drone camera</a>
+        <a href="3d-terrain.html">3D terrain</a>
+        <a href="limitations.html">Limitations</a>
+        <a href="photoreal-maps.html">Photoreal maps</a>
+        <a href="choosing.html">Choosing a front end</a>
+        <a href="calculator/index.html">Calculator</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero compact">
+  <div class="wrap">
+    <h1>The drone camera</h1>
+    <p class="sub">One file, eight apps, two renderers — the latch design, the hand-back bug, and the Cesium traps.</p>
+    
+  </div>
+</header>
+
+<section>
+  <div class="wrap reading">
+    <div class="toc"><strong>On this page</strong>
+    <ul>
+      <li><a href="#why-there-is-no-drone-mode-button">Why there is no "drone mode" button</a></li>
+      <li><a href="#the-hand-back-the-bug-this-fixes">The hand-back — the bug this fixes</a></li>
+      <li><a href="#keeping-one-file-across-many-apps">Keeping one file across many apps</a></li>
+      <li><a href="#porting-it-threejs">Porting it (Three.js)</a></li>
+      <li><a href="#porting-it-to-cesium">Porting it to Cesium</a></li>
+      <li><a href="#testing-it-three-traps-that-cost-real-time">Testing it — three traps that cost real time</a></li>
+      <li><a href="#the-bit-worth-saying-out-loud">The bit worth saying out loud</a></li>
+    </ul>
+  </div>
+    <article>
+<blockquote>
+<p>How <code>flyControls.ts</code> works, why it has no toggle button, and how to port it.
+Companion to the code: the Three.js version ships inside the <strong>paragliding-insights</strong> template in
+<code>microsoft/awesome-rayfin</code> (PR #92); the Cesium port is on a public fork of Harbour Pulse.</p>
+</blockquote>
+<hr />
+<h2 id="why-there-is-no-drone-mode-button">Why there is no "drone mode" button</h2>
+<p>OrbitControls and a free-flight camera want the <strong>same four inputs</strong>. Counted precisely, there are
+four collisions — not one:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>input</th>
+<th>OrbitControls</th>
+<th>drone</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>left drag</td>
+<td>rotate around target</td>
+<td>look</td>
+</tr>
+<tr>
+<td>wheel</td>
+<td>dolly zoom</td>
+<td>cruise speed</td>
+</tr>
+<tr>
+<td>Shift + left drag</td>
+<td><strong>pan</strong> (it binds ctrl/meta/shift on LEFT)</td>
+<td>boost</td>
+</tr>
+<tr>
+<td>arrow keys</td>
+<td>pan</td>
+<td>look</td>
+</tr>
+</tbody>
+</table></div>
+<p>Free: <code>W A S D Q E R F</code>, middle/right button, all touch gestures.</p>
+<p>So the merge isn't a mode switch — it's <strong>deciding which behaviour the viewer is doing</strong> and binding
+the four contested inputs accordingly. And that decision is a <strong>latch</strong>, not a toggle:</p>
+<ul>
+<li>not engaged → the map. Drag orbits, wheel zooms. Unchanged for anyone who never flies.</li>
+<li>press <code>W A S D Q E R F</code> → engaged. Drag looks, wheel is the throttle.</li>
+<li><strong>1 s</strong> with no movement key and no drag → hands back <strong>in place</strong>.</li>
+</ul>
+<p>⚠️ <strong>Do not define "flying" as <code>velocity &gt; 0</code>.</strong> Meaning that changes on a timer the user didn't set
+is a mode error. The grace window <em>is</em> the design.</p>
+<p><strong>What replaced the button</strong> — and why it couldn't just be deleted: the merge changes what the wheel
+and the drag <em>do</em>, so something must say (a) that the keys exist and (b) which behaviour the mouse
+currently has. Two shapes work: one element with <code>data-flying="true|false"</code> whose text swaps
+hint ↔ help, or a <code>drone-hint</code> that becomes a HUD while flying (the HUD appearing <em>is</em> the
+statement). Use <code>data-flying</code>, not <code>aria-pressed</code> — the latter would be a lie about something
+unpressable.</p>
+<hr />
+<h2 id="the-hand-back-the-bug-this-fixes">The hand-back — the bug this fixes</h2>
+<p>🔴 <strong><code>OrbitControls.update()</code> clamps <code>phi</code> to <code>[minPolarAngle, maxPolarAngle]</code> unconditionally, every
+frame, and enforces it by <em>moving the camera</em>.</strong> So deriving the orbit target as
+<code>camera.position + viewDir * D</code> snaps the camera whenever the view is level or pitched up — with
+<code>maxPolarAngle = 0.48π</code> that's any view pitched up more than about <strong>−3.6°</strong>, i.e. nearly all of them.</p>
+<p><strong>This bug was in every app that had free flight, from the day it landed.</strong></p>
+<p><code>handBackToOrbit()</code> fixes it in three steps:
+1. <strong>Clamp the pitch</strong> just below the limit, keeping the bearing.
+2. <strong>March the view ray against the ground</strong> (48 steps + 8 bisections) so the orbit centre lands on
+   the terrain the viewer was actually looking at.
+3. <strong>Clamp the distance</strong> into <code>[minDistance × 1.05, maxDistance × 0.95]</code> — a distant ridge is
+   further than <code>maxDistance</code> and would clamp too.</p>
+<p>Measured hand-back jump after the fix: <strong>0.000 m</strong>.</p>
+<hr />
+<h2 id="keeping-one-file-across-many-apps">Keeping one file across many apps</h2>
+<p>The module is <strong>byte-identical in 8 Three.js apps</strong> (verify with <code>Get-FileHash</code>). That only works
+because of one discipline:</p>
+<blockquote>
+<p><strong>Every app-specific number is an option. Every app-specific fact lives in the host scene.</strong></p>
+</blockquote>
+<p>Real per-app options in use:</p>
+<pre><code>defaults, no inertia                                   (a flood twin)
+cruise 25 / 900 / 180, boost 3, taus 0.28/0.16/0.07    (paragliding, campus twins)
+cruise 8 / 400 / 60, boost 3, referenceAglM 25,
+  aglScaleMin 0.3, aglScaleMax 14, handoffDistanceM 3000   (a maritime twin)
+</code></pre>
+<p>That last one is the interesting case: its reference height is a <strong>mast top</strong>, not a building, so the
+2.6× headroom every other app uses was far too little — <strong>that is why the AGL scaling range had to
+become an option at all</strong> rather than a constant.</p>
+<hr />
+<h2 id="porting-it-threejs">Porting it (Three.js)</h2>
+<ol>
+<li>Copy <code>flyControls.ts</code> into <code>src/twin3d/</code>. Delete the app's old drone camera <strong>and its test</strong>.</li>
+<li>Build the scene once; pass <code>controls</code> (a structural <code>OrbitLike</code> — works with OrbitControls,
+   MapControls, a fork, or a stub) and an optional <code>groundAt</code>. In the render loop swap
+   <code>if (drone.enabled) drone.update(dt)</code> → <code>if (fly.engaged) fly.update(dt)</code>.</li>
+<li>Expose <code>setEngaged</code>, <code>engaged</code>, <code>cruiseMs</code> <strong>and an <code>onEngagedChange</code> subscription</strong> — the UI must
+   <em>follow</em> the latch, not command it.</li>
+<li><code>onEngagedChange(true)</code> must cancel <strong>everything else that drives the camera</strong>: in-flight
+   transitions, guided tours, follow-target modes.</li>
+<li>The UI toggle only <em>asks</em> (<code>onToggle={next =&gt; handle.setFreeFly(next)}</code>); state comes from the
+   subscription. Add an idle hint ("Or just press W A S D") — <strong>without it the merge is invisible</strong>.</li>
+<li>Copy the unit tests (53 of them) and the hand-back e2e tests.</li>
+</ol>
+<p>⚠️ <strong><code>groundAt</code> must return the DRAWN elevation.</strong> If your app renders with vertical exaggeration,
+multiply — it is compared against <code>camera.position.y</code>.</p>
+<hr />
+<h2 id="porting-it-to-cesium">Porting it to Cesium</h2>
+<p>Same behavioural model, <strong>rewritten against the Cesium camera API — not a copy</strong>. Four traps, all
+found the hard way:</p>
+<ul>
+<li>🔴 <strong>Cesium's event-type names are inverted vs intuition.</strong> In 3D, <code>rotateEventTypes</code> carries you
+  <em>across</em> the globe (that's the <strong>pan</strong>) and <code>tiltEventTypes</code> swings around the picked point (that's
+  the <strong>orbit</strong>). Binding by name gets it exactly backwards. <strong>Bind by behaviour, then measure.</strong></li>
+<li>🔴 <strong><code>lookEventTypes = []</code> is mandatory.</strong> Cesium binds free-look to Shift+left by default — the
+  same chord as pan — and the two fight, yawing the view.</li>
+<li>🔴 <strong>There is no <code>maxPolarAngle</code> equivalent.</strong> A long drag sails over the zenith and leaves the
+  camera <strong>heading 180 / roll 180 — silently inverted</strong>, and every later drag reads mirrored. Fix
+  with a <code>scene.preRender</code> guard holding the last legal pose (pitch −89.5°…−3.6°, |roll| ≤ 1°) and
+  <code>setView</code>-ing back on the first illegal frame. Skip the guard while the drone is engaged (a pilot
+  legitimately pitches up and rolls); on hand-back, clamp to the nearest bound.</li>
+<li>🔴 <strong>A <code>flyTo</code> requested while the latch is engaged is impossible</strong> — <code>applyOrientation()</code> runs
+  every frame and overrides it. <strong>Hand back <em>before</em> flying.</strong></li>
+<li>⚠️ If you have a basemap/imagery toggle that <strong>destroys and rebuilds the Viewer</strong>, re-attach
+  flyControls inside that effect or the drone silently dies after the first switch.</li>
+</ul>
+<p>Sensitivity needs no tuning: Cesium's tilt already matches <code>rotateSpeed 0.55</code> (140 px → 54° measured
+vs 59° predicted). Drive it with
+<code>viewer.scene.preUpdate.addEventListener(() =&gt; fly.update(dt))</code>, dt clamped to 0.1 s, and
+<code>fly.dispose()</code> in cleanup.</p>
+<hr />
+<h2 id="testing-it-three-traps-that-cost-real-time">Testing it — three traps that cost real time</h2>
+<ul>
+<li>⚠️ <strong>Never measure camera speed through a degraded browser session.</strong> The same code gave 146 m
+  early in a session and 12 m later, once WebGL was exhausted and the scene ran at 1–2 fps. The
+  0.1 s <strong>dt clamp</strong> then dominates: one frame moves <code>BASE × BOOST × 0.1</code>, so you measure
+  frame-count quantisation, not your setting. A boost of 12 read back as 5.1.
+  <strong>Verify constants by reading the deployed bundle instead.</strong></li>
+<li>⚠️ <strong>Synthetic keydown + a stray blur.</strong> The controls clear <code>held</code> on <code>blur</code>, and a test harness
+  tearing down a previous context can steal focus between the press and the first poll → the camera
+  never moves, the assertion reads 0, and it passes when run alone. <strong>Re-dispatch the keydown on
+  every poll</strong> (<code>held</code> is a Set, so repeats are free).</li>
+<li>⚠️ <strong>With inertia, "keys are up" and "camera has stopped" are ~1.2 s apart.</strong> Waiting a fixed
+  700 ms fails by half a metre. Sampling the camera for two equal values is <em>also</em> wrong — equal
+  samples can mean <em>no frame was drawn</em>. <strong>Wait on the speed readout reaching 0.</strong></li>
+<li>⚠️ A test that must stay engaged while you measure stillness should <strong>hold an arrow key</strong>: it
+  resets the idle window every frame and turns the view without moving the camera.</li>
+</ul>
+<hr />
+<h2 id="the-bit-worth-saying-out-loud">The bit worth saying out loud</h2>
+<p>The camera costs nothing. <code>three</code> is its only import; CesiumJS is Apache-2.0. <strong>The pixels are what
+you pay for</strong> — a photorealism token gates the <em>content</em>, never the renderer and never the camera.</p>
+    </article>
+    <p style="margin-top:3rem"><a class="btn btn-outline"
+       href="https://github.com/KornAlexander/Fabric-App-Learnings/blob/main/playbooks/drone-camera.md">Read the markdown source on GitHub</a></p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <p><strong>Personal field notes.</strong> Written for myself while building things, shared in case
+       they save someone else the same days.</p>
+    <p>Not affiliated with, endorsed by, or representing Microsoft. Nothing here is official guidance,
+       and nothing here is tested beyond my own use.</p>
+    <p>Markdown sources and issues: <a href="https://github.com/KornAlexander/Fabric-App-Learnings">https://github.com/KornAlexander/Fabric-App-Learnings</a> · MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>

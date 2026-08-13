@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric App — CU &amp; Capacity Calculator</title>
+<script>
+  (() => {
+    const param = new URLSearchParams(window.location.search).get("clawpilotTheme");
+    const theme =
+      param || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme", theme);
+  })();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef; --cp-bg-elevated: #fcfbf8; --cp-surface: #ffffff; --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede; --cp-border-strong: #919191; --cp-text: #242424; --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f; --cp-accent: #b11f4b; --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08); --cp-accent-fg: #ffffff; --cp-success: #16a34a;
+  --cp-danger: #dc2626; --cp-warning: #f59e0b; --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12); --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86); --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55); --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a; --cp-bg-elevated: #343231; --cp-surface: #292929; --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747; --cp-border-strong: #5f5f5f; --cp-text: #dedede; --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0; --cp-accent: #fd8ea1; --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14); --cp-accent-fg: #1a1a1a; --cp-success: #4ade80;
+  --cp-danger: #f87171; --cp-warning: #fbbf24; --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32); --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72); --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04); --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px 16px 64px; background: var(--cp-bg); color: var(--cp-text);
+  font-family: "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 15px; line-height: 1.55;
+}
+.wrap { max-width: 1100px; margin: 0 auto; }
+header.hero { margin-bottom: 20px; }
+header.hero h1 { font-size: 1.75rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+header.hero p { margin: 0; color: var(--cp-text-muted); max-width: 70ch; }
+.kicker { display:inline-block; font-size:.72rem; letter-spacing:.09em; text-transform:uppercase;
+  color: var(--cp-accent); font-weight:700; margin-bottom:8px; }
+
+.card { background: var(--cp-surface); border: 1px solid var(--cp-border); border-radius: 16px;
+  box-shadow: 0 0 2px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.14); padding: 20px; margin-bottom: 16px; }
+.card > h2 { font-size:.78rem; text-transform:uppercase; letter-spacing:.08em;
+  color: var(--cp-text-soft); margin: 0 0 4px; font-weight:700; }
+.card > .lead { color: var(--cp-text-muted); font-size:.86rem; margin: 0 0 16px; }
+
+.grid { display:grid; gap:16px; }
+.cols-2 { grid-template-columns: repeat(auto-fit, minmax(300px,1fr)); }
+.cols-3 { grid-template-columns: repeat(auto-fit, minmax(215px,1fr)); }
+.cols-4 { grid-template-columns: repeat(auto-fit, minmax(165px,1fr)); }
+
+.field { margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field > label { display:block; font-size:.82rem; font-weight:600; margin-bottom:4px; }
+.hint { display:block; font-size:.74rem; color: var(--cp-text-soft); font-weight:400; margin-top:3px; }
+input[type=number], select { width:100%; padding:8px 10px; font:inherit; font-size:.9rem;
+  color: var(--cp-text); background: var(--cp-bg-elevated); border:1px solid var(--cp-border);
+  border-radius:.625rem; }
+input[type=number]:focus, select:focus { outline:2px solid var(--cp-accent); outline-offset:1px; }
+input[type=range] { width:100%; accent-color: var(--cp-accent); margin-top:4px; }
+.rangerow { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.rangeval { font-variant-numeric: tabular-nums; font-weight:700; font-size:.95rem; }
+
+.tog { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; cursor:pointer;
+  border:1px solid var(--cp-border); border-radius:.625rem; background: var(--cp-surface-soft);
+  margin-bottom:8px; }
+.tog:hover { border-color: var(--cp-border-strong); }
+.tog input { position:absolute; opacity:0; width:0; height:0; }
+.tog .sw { flex:0 0 auto; width:36px; height:20px; border-radius:999px;
+  background: var(--cp-border-strong); position:relative; transition:background .15s ease; margin-top:2px; }
+.tog .sw::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px;
+  border-radius:50%; background:#fff; transition:transform .15s ease; }
+.tog input:checked + .sw { background: var(--cp-accent); }
+.tog input:checked + .sw::after { transform: translateX(16px); }
+.tog input:focus-visible + .sw { outline:2px solid var(--cp-accent); outline-offset:2px; }
+.tog .txt { font-size:.86rem; font-weight:600; line-height:1.3; }
+.tog .txt small { display:block; font-weight:400; color: var(--cp-text-soft); font-size:.76rem; margin-top:2px; }
+.tog[data-on="true"] { background: var(--cp-accent-soft); border-color: var(--cp-accent); }
+
+.sub { margin: 6px 0 14px 22px; padding-left: 12px; border-left: 2px solid var(--cp-border); }
+.sub[hidden] { display:none; }
+
+.headline { border:1px solid var(--cp-accent); background: var(--cp-accent-soft);
+  border-radius:16px; padding:22px; margin-bottom:16px; }
+.headline .lbl { font-size:.78rem; text-transform:uppercase; letter-spacing:.08em;
+  color: var(--cp-accent); font-weight:700; }
+.headline .big { font-size: clamp(2rem,5.5vw,3.2rem); font-weight:800; line-height:1.05;
+  font-variant-numeric: tabular-nums; margin:6px 0 4px; letter-spacing:-.02em; }
+.headline .note { color: var(--cp-text-muted); font-size:.9rem; max-width:66ch; }
+
+.stat { background: var(--cp-surface-soft); border:1px solid var(--cp-border);
+  border-radius:.625rem; padding:14px; }
+.stat .lbl { font-size:.74rem; color: var(--cp-text-soft); text-transform:uppercase;
+  letter-spacing:.06em; font-weight:700; }
+.stat .val { font-size:1.4rem; font-weight:800; font-variant-numeric:tabular-nums;
+  margin-top:2px; letter-spacing:-.01em; }
+.stat .note { font-size:.76rem; color: var(--cp-text-muted); margin-top:4px; }
+.val.bad { color: var(--cp-danger); } .val.good { color: var(--cp-success); }
+
+.bar { display:flex; height:34px; border-radius:.625rem; overflow:hidden;
+  border:1px solid var(--cp-border); margin:4px 0 10px; }
+.bar span { display:block; min-width:0; transition:width .18s ease; }
+.bar .used { background: var(--cp-accent); }
+.bar .idle { background: var(--cp-border-strong); }
+.bar .pause { background: repeating-linear-gradient(45deg, var(--cp-warning), var(--cp-warning) 6px,
+  transparent 6px, transparent 12px); }
+.legend { display:flex; flex-wrap:wrap; gap:14px; font-size:.78rem; color: var(--cp-text-muted); }
+.legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:5px;
+  vertical-align:-1px; }
+.legend .used { background: var(--cp-accent); }
+.legend .idle { background: var(--cp-border-strong); }
+.legend .pause { background: var(--cp-warning); }
+
+table { width:100%; border-collapse:collapse; font-size:.86rem; }
+th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--cp-border); }
+th { font-size:.74rem; text-transform:uppercase; letter-spacing:.05em; color: var(--cp-text-soft); }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+tr.fit td { background: var(--cp-accent-soft); font-weight:700; }
+tr.toosmall td { color: var(--cp-text-soft); }
+
+details { border-top:1px solid var(--cp-border); padding-top:12px; margin-top:14px; }
+summary { cursor:pointer; font-weight:700; font-size:.85rem; color: var(--cp-accent); }
+.formula { background: var(--cp-surface-soft); border:1px solid var(--cp-border);
+  border-radius:.625rem; padding:10px 12px; margin:8px 0;
+  font-family: Consolas,"Courier New",Courier,monospace; font-size:.8rem;
+  overflow-x:auto; white-space:pre; }
+.callout { border-left:3px solid var(--cp-accent); background: var(--cp-accent-soft);
+  padding:10px 14px; border-radius:0 .625rem .625rem 0; margin:12px 0; font-size:.86rem; }
+.callout.warn { border-left-color: var(--cp-warning); background: rgba(245,158,11,.10); }
+footer.note { color: var(--cp-text-soft); font-size:.78rem; margin-top:20px; max-width:80ch; }
+a { color: var(--cp-link); }
+.steps { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; font-size:.78rem;
+  color: var(--cp-text-soft); }
+.steps span { padding:4px 10px; border:1px solid var(--cp-border); border-radius:999px;
+  background: var(--cp-surface-soft); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <span class="kicker">Fabric Apps · CU &amp; Capacity Calculator</span>
+  <h1>What will my Fabric App burn — and what will that cost?</h1>
+  <p>
+    Answer four groups of plain questions. You get an expected CU consumption, the smallest capacity
+    that survives your peak, and the bill — including the part almost nobody budgets for:
+    <strong>a Fabric App cannot be switched off</strong>, so it takes your pause button with it.
+  </p>
+</header>
+
+<div class="steps">
+  <span>1 · What the app does</span><span>2 · How many people</span>
+  <span>3 · CU + which capacity</span><span>4 · What it costs</span>
+</div>
+
+<div class="callout warn">
+  <strong>Read this before quoting any number from here.</strong> The CU coefficients are
+  <em>starting assumptions</em>, not published Microsoft figures. Every one is visible and editable
+  under <em>Assumptions</em> at the bottom. Use this to compare shapes and find the SKU boundary —
+  then calibrate against the <strong>Fabric Capacity Metrics</strong> app with your own workload.
+</div>
+
+<!-- ================= STEP 1 ================= -->
+<div class="card">
+  <h2>1 · What does your app do?</h2>
+  <p class="lead">Switch on what applies. Everything off = a static page with no data at all.</p>
+
+  <div class="grid cols-2">
+    <div>
+      <label class="tog" data-on="true">
+        <input type="checkbox" id="tStatic" checked disabled /><span class="sw"></span>
+        <span class="txt">Static hosting<small>Always on. The app has to answer, so this never reaches zero.</small></span>
+      </label>
+
+      <div class="field">
+        <label for="modelKind">Reads a semantic model?</label>
+        <select id="modelKind">
+          <option value="none">No — no semantic model</option>
+          <option value="directlake" selected>Yes — Direct Lake</option>
+          <option value="import">Yes — Import</option>
+          <option value="sqlep">Yes — SQL endpoint / DirectQuery</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="daxOpen">DAX queries when the app opens</label>
+        <input type="number" id="daxOpen" min="0" step="1" value="12" />
+        <span class="hint">The burst: every visual renders at once. A KPI header plus a few charts is 8–20. <strong>This drives your peak.</strong></span>
+      </div>
+
+      <div class="field">
+        <label for="daxPerMin">Extra DAX queries per minute of use</label>
+        <input type="number" id="daxPerMin" min="0" step="0.5" value="1" />
+        <span class="hint" id="daxDerived"></span>
+      </div>
+
+      <label class="tog" data-on="false">
+        <input type="checkbox" id="tDb" /><span class="sw"></span>
+        <span class="txt">Uses a database<small>Fabric SQL DB / warehouse — reads or write-back</small></span>
+      </label>
+      <div class="sub" id="subDb" hidden>
+        <div class="field">
+          <label for="dbq">Database queries per session</label>
+          <input type="number" id="dbq" min="0" step="1" value="6" />
+        </div>
+      </div>
+
+      <label class="tog" data-on="false">
+        <input type="checkbox" id="tUdf" /><span class="sw"></span>
+        <span class="txt">Calls User Data Functions<small>Server-side logic, write-back, proxying</small></span>
+      </label>
+      <div class="sub" id="subUdf" hidden>
+        <div class="field">
+          <label for="udf">UDF calls per session</label>
+          <input type="number" id="udf" min="0" step="1" value="4" />
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <label class="tog" data-on="false">
+        <input type="checkbox" id="tRefresh" /><span class="sw"></span>
+        <span class="txt">Model refresh on a schedule<small>Import mostly — Direct Lake reframes far more cheaply</small></span>
+      </label>
+      <div class="sub" id="subRefresh" hidden>
+        <div class="field">
+          <label for="refreshEvery">How often</label>
+          <select id="refreshEvery">
+            <option value="1">Daily</option>
+            <option value="4">Every 6 hours</option>
+            <option value="24" selected>Hourly</option>
+            <option value="96">Every 15 minutes</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="tog" data-on="false">
+        <input type="checkbox" id="tRt" /><span class="sw"></span>
+        <span class="txt">Real-time data<small>Eventstream + Eventhouse ingestion</small></span>
+      </label>
+      <div class="sub" id="subRt" hidden>
+        <div class="field">
+          <label for="eps">Events per second</label>
+          <input type="number" id="eps" min="0" step="10" value="100" />
+          <span class="hint">⚠️ An Eventhouse also draws a baseline just by existing — see Assumptions.</span>
+        </div>
+      </div>
+
+      <label class="tog" data-on="false">
+        <input type="checkbox" id="tSpark" /><span class="sw"></span>
+        <span class="txt">Notebooks / Spark jobs<small>Pipelines, data prep, model builds</small></span>
+      </label>
+      <div class="sub" id="subSpark" hidden>
+        <div class="grid cols-2">
+          <div class="field">
+            <label for="sparkRuns">Runs per day</label>
+            <input type="number" id="sparkRuns" min="0" step="1" value="4" />
+          </div>
+          <div class="field">
+            <label for="sparkMin">Minutes per run</label>
+            <input type="number" id="sparkMin" min="0" step="1" value="10" />
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="gb">Data scanned per query (GB)</label>
+        <input type="number" id="gb" min="0" step="0.1" value="0.5" />
+        <span class="hint">Scales query cost. A small model is 0.1; a wide fact scan is 5+.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= STEP 2 ================= -->
+<div class="card">
+  <h2>2 · How many people?</h2>
+  <p class="lead">The monthly total decides the bill. The <em>opening burst</em> at peak concurrency decides the SKU. They are different questions — a longer session raises the bill but not the peak.</p>
+  <div class="grid cols-4">
+    <div class="field">
+      <label for="apps">Apps on this capacity</label>
+      <input type="number" id="apps" min="1" step="1" value="1" />
+    </div>
+    <div class="field">
+      <label for="users">Users per app (monthly)</label>
+      <input type="number" id="users" min="0" step="10" value="200" />
+    </div>
+    <div class="field">
+      <label for="sessPerUser">Sessions per user per month</label>
+      <input type="number" id="sessPerUser" min="0" step="1" value="8" />
+    </div>
+    <div class="field">
+      <label for="sessMin">Minutes per session</label>
+      <input type="number" id="sessMin" min="1" step="1" value="6" />
+    </div>
+  </div>
+  <div class="field" style="max-width:440px;margin-top:4px">
+    <div class="rangerow">
+      <label for="peakPct" style="margin:0">Peak concurrency</label>
+      <span class="rangeval" id="peakPctVal">3 %</span>
+    </div>
+    <input type="range" id="peakPct" min="1" max="100" step="1" value="3" />
+    <span class="hint">Share of all users active <em>at the same moment</em>. This is what decides your SKU.
+      Everyday apps sit at 2–10 %; a scheduled all-hands or a small team that all open it at 09:00 is 100 %.</span>
+  </div>
+</div>
+
+<!-- ================= STEP 3 ================= -->
+<div class="headline">
+  <div class="lbl">Expected consumption</div>
+  <div class="big" id="outPeak">0 CU</div>
+  <div class="note" id="outPeakNote"></div>
+</div>
+
+<div class="grid cols-3" style="margin-bottom:16px">
+  <div class="stat">
+    <div class="lbl">Smallest capacity that fits</div>
+    <div class="val good" id="outSku">F2</div>
+    <div class="note" id="outSkuNote"></div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Average CU (whole month)</div>
+    <div class="val" id="outAvg">0</div>
+    <div class="note" id="outAvgNote"></div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Total CU-hours / month</div>
+    <div class="val" id="outCuh">0</div>
+    <div class="note" id="outCuhNote"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Where the CU goes</h2>
+  <table>
+    <thead><tr><th>Source</th><th class="num">CU-hours / month</th><th class="num">Share</th></tr></thead>
+    <tbody id="breakdown"></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Which capacity, and how full</h2>
+  <table>
+    <thead><tr><th>SKU</th><th class="num">CU</th><th class="num">Covers peak?</th><th class="num">Cost / month</th><th class="num">Utilisation</th></tr></thead>
+    <tbody id="skuBody"></tbody>
+  </table>
+  <p class="hint" style="margin-top:10px">
+    Sized on the <strong>peak</strong>, plus a headroom factor. Fabric smooths interactive operations
+    over ~5 minutes and background work over ~24 hours, which is why a short spike does not
+    automatically throttle you — and also why sizing on the <em>average</em> is exactly how people
+    end up throttled.
+  </p>
+</div>
+
+<!-- ================= STEP 4 ================= -->
+<div class="card">
+  <h2>4 · What it costs — and the pause you can't take</h2>
+  <p class="lead">
+    A paused capacity serves the app an HTTP 500. So hosting an app converts a schedulable capacity
+    into a 24/7 one, and every cost lever the platform gives you is the thing that breaks it.
+  </p>
+
+  <div class="grid cols-3">
+    <div class="field">
+      <label for="sku">Capacity you actually run</label>
+      <select id="sku"></select>
+      <span class="hint">Follows the recommendation until you change it.</span>
+    </div>
+    <div class="field">
+      <label for="rate">Rate per CU-hour (USD)</label>
+      <input type="number" id="rate" step="0.001" min="0" value="0.19" />
+      <span class="hint">Measured, not a price list: Sweden Central ≈ 0.19, West US 3 ≈ 0.18.</span>
+    </div>
+    <div class="field">
+      <label for="hours">Hours in the month</label>
+      <input type="number" id="hours" step="1" min="1" value="730" />
+    </div>
+  </div>
+
+  <div class="grid cols-2" style="margin-top:6px">
+    <div class="field">
+      <div class="rangerow"><label for="upWith" style="margin:0">Uptime <em>with</em> an app hosted</label>
+        <span class="rangeval" id="upWithVal">91 %</span></div>
+      <input type="range" id="upWith" min="1" max="100" step="1" value="91" />
+    </div>
+    <div class="field">
+      <div class="rangerow"><label for="upWithout" style="margin:0">Uptime you could reach <em>without</em> one</label>
+        <span class="rangeval" id="upWithoutVal">26 %</span></div>
+      <input type="range" id="upWithout" min="0" max="100" step="1" value="26" />
+    </div>
+  </div>
+
+  <div class="callout">
+    Defaults are two real capacities in one tenant over the same week: the one hosting Fabric Apps ran
+    <strong>91 %</strong>, the one hosting none ran <strong>26 %</strong>. Same owner, same schedule.
+    The app is the whole difference.
+  </div>
+</div>
+
+<div class="grid cols-3" style="margin-bottom:16px">
+  <div class="stat">
+    <div class="lbl">Capacity bill / month</div>
+    <div class="val" id="outBill">$0</div>
+    <div class="note" id="outBillNote"></div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Cost of the pause you can't take</div>
+    <div class="val bad" id="outPause">$0</div>
+    <div class="note" id="outPauseNote"></div>
+  </div>
+  <div class="stat">
+    <div class="lbl">You pay this per CU-hour used</div>
+    <div class="val bad" id="outEff">$0</div>
+    <div class="note" id="outEffNote"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>How full is the capacity you're paying for?</h2>
+  <div class="bar">
+    <span class="used" id="segUsed"></span><span class="idle" id="segIdle"></span><span class="pause" id="segPause"></span>
+  </div>
+  <div class="legend">
+    <span><i class="used"></i>Used by the workload <strong id="legUsed"></strong></span>
+    <span><i class="idle"></i>Bought, idle, but you chose to be on <strong id="legIdle"></strong></span>
+    <span><i class="pause"></i>Bought, idle, and you <strong>could not</strong> turn it off <strong id="legPause"></strong></span>
+  </div>
+  <p style="font-size:.86rem;color:var(--cp-text-muted);margin:12px 0 0" id="barNote"></p>
+</div>
+
+<!-- ================= ASSUMPTIONS ================= -->
+<div class="card">
+  <h2>Assumptions — every number is editable</h2>
+  <details>
+    <summary>Open the coefficients</summary>
+    <p class="hint" style="margin:10px 0">
+      These convert "an operation" into CU-seconds. They are starting estimates. Replace them with
+      figures from the Fabric Capacity Metrics app and this becomes a real model of <em>your</em> tenant.
+    </p>
+    <div class="grid cols-4">
+      <div class="field"><label for="cStatic">Static page load</label><input type="number" id="cStatic" step="0.1" min="0" value="0.5" /><span class="hint">CU-s per session</span></div>
+      <div class="field"><label for="cDl">DAX — Direct Lake</label><input type="number" id="cDl" step="0.1" min="0" value="2" /><span class="hint">CU-s per query @1 GB</span></div>
+      <div class="field"><label for="cIm">DAX — Import</label><input type="number" id="cIm" step="0.1" min="0" value="1.5" /><span class="hint">CU-s per query @1 GB</span></div>
+      <div class="field"><label for="cSql">DAX — SQL endpoint</label><input type="number" id="cSql" step="0.1" min="0" value="3.5" /><span class="hint">CU-s per query @1 GB</span></div>
+      <div class="field"><label for="cDb">Database query</label><input type="number" id="cDb" step="0.1" min="0" value="1.5" /><span class="hint">CU-s per query</span></div>
+      <div class="field"><label for="cUdf">UDF invoke</label><input type="number" id="cUdf" step="0.1" min="0" value="1" /><span class="hint">CU-s per call</span></div>
+      <div class="field"><label for="cRefresh">Model refresh</label><input type="number" id="cRefresh" step="1" min="0" value="60" /><span class="hint">CU-s per GB refreshed</span></div>
+      <div class="field"><label for="cModelGb">Model size (GB)</label><input type="number" id="cModelGb" step="0.5" min="0" value="2" /><span class="hint">used by refresh</span></div>
+      <div class="field"><label for="cEvents">Ingestion</label><input type="number" id="cEvents" step="0.1" min="0" value="4" /><span class="hint">CU-s per 1,000 events</span></div>
+      <div class="field"><label for="cEhBase">Eventhouse baseline</label><input type="number" id="cEhBase" step="0.1" min="0" value="1" /><span class="hint">CU held continuously</span></div>
+      <div class="field"><label for="cSpark">Spark</label><input type="number" id="cSpark" step="1" min="0" value="120" /><span class="hint">CU-s per job-minute</span></div>
+      <div class="field"><label for="cGbExp">Data-volume scaling</label><input type="number" id="cGbExp" step="0.05" min="0" max="1" value="0.5" /><span class="hint">exponent · 0 = flat, 1 = linear</span></div>
+      <div class="field"><label for="cHead">Peak headroom</label><input type="number" id="cHead" step="0.05" min="1" value="1.3" /><span class="hint">× before choosing a SKU</span></div>
+      <div class="field"><label for="cSmooth">Interactive smoothing window</label><input type="number" id="cSmooth" step="10" min="1" value="300" /><span class="hint">seconds · Fabric spreads interactive ops over ~5 min</span></div>
+      <div class="field"><label for="cResv">Reservation discount</label><input type="number" id="cResv" step="1" min="0" max="60" value="0" /><span class="hint">% · 0 = pay-as-you-go</span></div>
+    </div>
+    <div class="formula" id="formulas"></div>
+  </details>
+</div>
+
+<footer class="note">
+  No network calls, no storage, nothing leaves this page. CU coefficients are estimates entered by
+  you and default to starting assumptions — they are not an official Microsoft price list or capacity
+  guide, and both will drift. Verify against Azure pricing and the Fabric Capacity Metrics app before
+  quoting anything.
+</footer>
+
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const SKUS = [2,4,8,16,32,64,128,256,512,1024,2048];
+  const $ = (id) => document.getElementById(id);
+  const n = (id) => Number($(id).value) || 0;
+
+  const usd = (v, dp) => {
+    const d = dp === undefined ? (Math.abs(v) >= 100 ? 0 : 2) : dp;
+    return "$" + v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  };
+  const num = (v, dp) => v.toLocaleString("en-US", {
+    minimumFractionDigits: dp === undefined ? 0 : dp,
+    maximumFractionDigits: dp === undefined ? 0 : dp });
+  const pct = (v, dp) => num(v, dp === undefined ? 1 : dp) + " %";
+
+  SKUS.forEach((cu) => {
+    const o = document.createElement("option");
+    o.value = String(cu); o.textContent = "F" + cu + "  (" + cu + " CU)";
+    $("sku").appendChild(o);
+  });
+  let skuTouched = false;
+  $("sku").addEventListener("change", () => { skuTouched = true; });
+
+  [["tDb","subDb"],["tUdf","subUdf"],["tRefresh","subRefresh"],["tRt","subRt"],["tSpark","subSpark"]]
+    .forEach(([t, s]) => {
+      $(t).addEventListener("change", () => {
+        const on = $(t).checked;
+        $(s).hidden = !on;
+        $(t).closest(".tog").dataset.on = String(on);
+      });
+    });
+
+  function daxRate(kind) {
+    if (kind === "import") return n("cIm");
+    if (kind === "sqlep") return n("cSql");
+    if (kind === "directlake") return n("cDl");
+    return 0;
+  }
+
+  function model() {
+    const kind = $("modelKind").value;
+    const gb = Math.max(0, n("gb"));
+    const gbFactor = Math.pow(Math.max(gb, 0.0001), Math.min(Math.max(n("cGbExp"), 0), 1));
+    const hours = Math.max(1, n("hours"));
+    const secMonth = hours * 3600;
+    const rateDax = kind === "none" ? 0 : daxRate(kind);
+    const sessMin = Math.max(1, n("sessMin"));
+
+    // queries: an opening burst, then a rate while the user works
+    const qOpen = n("daxOpen");
+    const qTotal = qOpen + n("daxPerMin") * sessMin;
+
+    const cuDb  = $("tDb").checked  ? n("dbq") * n("cDb") * gbFactor : 0;
+    const cuUdf = $("tUdf").checked ? n("udf") * n("cUdf") : 0;
+
+    // whole session -> drives the monthly bill
+    const perSession = n("cStatic") + qTotal * rateDax * gbFactor + cuDb + cuUdf;
+    // the opening burst -> drives the peak (db/udf calls fire on open too)
+    const burstCUs = n("cStatic") + qOpen * rateDax * gbFactor + cuDb + cuUdf;
+
+    const apps = Math.max(1, n("apps"));
+    const totalUsers = apps * n("users");
+    const sessionsMonth = totalUsers * n("sessPerUser");
+    const interactiveCUs = sessionsMonth * perSession;
+
+    const concurrent = totalUsers * (n("peakPct") / 100);
+    // Fabric smooths interactive operations over ~5 minutes, so the burst is spread over that window
+    const smooth = Math.max(1, n("cSmooth"));
+    const peakInteractiveCU = concurrent * burstCUs / smooth;
+
+    const refreshes = $("tRefresh").checked ? Number($("refreshEvery").value) * 30 : 0;
+    const refreshCUs = refreshes * n("cRefresh") * n("cModelGb");
+
+    const rtOn = $("tRt").checked;
+    const ingestCUs = rtOn ? (n("eps") * secMonth / 1000) * n("cEvents") : 0;
+    const ehBaseCUs = rtOn ? n("cEhBase") * secMonth : 0;
+    const sparkCUs = $("tSpark").checked ? n("sparkRuns") * 30 * n("sparkMin") * n("cSpark") : 0;
+
+    const backgroundCUs = refreshCUs + ingestCUs + ehBaseCUs + sparkCUs;
+    const totalCUs = interactiveCUs + backgroundCUs;
+    const backgroundAvgCU = backgroundCUs / secMonth;
+    const peakCU = peakInteractiveCU + backgroundAvgCU;
+    const needed = peakCU * Math.max(1, n("cHead"));
+
+    return {
+      perSession, burstCUs, qOpen, qTotal, sessionsMonth, concurrent, totalUsers,
+      interactiveCUs, backgroundCUs, smooth,
+      totalCUs, totalCUh: totalCUs / 3600, avgCU: totalCUs / secMonth,
+      peakInteractiveCU, backgroundAvgCU, peakCU, needed, sessMin,
+      fitSku: SKUS.find((c) => c >= needed) || SKUS[SKUS.length - 1],
+      parts: [
+        ["Interactive (sessions)", interactiveCUs],
+        ["Model refresh", refreshCUs],
+        ["Real-time ingestion", ingestCUs],
+        ["Eventhouse baseline", ehBaseCUs],
+        ["Notebooks / Spark", sparkCUs]
+      ]
+    };
+  }
+
+  function render() {
+    const m = model();
+
+    $("peakPctVal").textContent = n("peakPct") + " %";
+    $("upWithVal").textContent = n("upWith") + " %";
+    $("upWithoutVal").textContent = n("upWithout") + " %";
+
+    if (!skuTouched) $("sku").value = String(m.fitSku);
+
+    $("outPeak").textContent = num(m.peakCU, m.peakCU < 10 ? 2 : 1) + " CU at peak";
+    $("outPeakNote").textContent =
+      num(m.concurrent, 1) + " concurrent users opening the app — " + num(m.burstCUs, 1) +
+      " CU-s of burst each, smoothed over " + num(m.smooth) + " s — plus " +
+      num(m.backgroundAvgCU, 2) + " CU of background. With " + num(n("cHead"), 2) +
+      "× headroom you need " + num(m.needed, 2) + " CU.";
+
+    $("daxDerived").textContent =
+      "→ " + num(m.qTotal, 1) + " queries per session (" + num(m.qOpen) + " on open + " +
+      num(n("daxPerMin") * m.sessMin, 1) + " while working). Session length changes the bill, not the peak.";
+
+    $("outSku").textContent = "F" + m.fitSku;
+    $("outSkuNote").textContent = "smallest SKU ≥ " + num(m.needed, 2) + " CU";
+    $("outAvg").textContent = num(m.avgCU, m.avgCU < 10 ? 2 : 1) + " CU";
+    $("outAvgNote").textContent = "over the whole month — do NOT size on this";
+    $("outCuh").textContent = num(m.totalCUh, 1);
+    $("outCuhNote").textContent = num(m.sessionsMonth) + " sessions · " + num(m.totalUsers) + " users";
+
+    const body = $("breakdown"); body.textContent = "";
+    const total = m.totalCUs || 1;
+    m.parts.filter((p) => p[1] > 0).sort((a, b) => b[1] - a[1]).forEach(([label, cus]) => {
+      const tr = document.createElement("tr");
+      [label, num(cus / 3600, 1), pct(cus / total * 100)].forEach((t, i) => {
+        const td = document.createElement("td");
+        if (i > 0) td.className = "num";
+        td.textContent = t; tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    if (!body.children.length) {
+      const tr = document.createElement("tr"), td = document.createElement("td");
+      td.colSpan = 3; td.textContent = "Nothing switched on yet.";
+      tr.appendChild(td); body.appendChild(tr);
+    }
+
+    const cu = Number($("sku").value);
+    const rate = Math.max(0, n("rate")) * (1 - Math.min(60, Math.max(0, n("cResv"))) / 100);
+    const hours = Math.max(1, n("hours"));
+    const upWith = n("upWith") / 100, upWithout = n("upWithout") / 100;
+    const activeHours = hours * upWith;
+    const unpausable = Math.max(0, hours * (upWith - upWithout));
+    const bill = activeHours * cu * rate;
+    const pauseCost = unpausable * cu * rate;
+    const availableCUh = cu * activeHours;
+    const effRate = m.totalCUh > 0 ? bill / m.totalCUh : Infinity;
+
+    $("outBill").textContent = usd(bill);
+    $("outBillNote").textContent = num(activeHours) + " active h × " + cu + " CU × " + usd(rate, 3);
+    $("outPause").textContent = usd(pauseCost);
+    $("outPauseNote").textContent = num(unpausable) + " h/month you cannot switch off · " +
+      usd(pauseCost * 12) + " a year";
+    if (isFinite(effRate)) {
+      $("outEff").textContent = usd(effRate);
+      $("outEffNote").textContent = "list is " + usd(rate, 3) + " — that is " +
+        num(rate > 0 ? effRate / rate : 0) + "× for every CU-hour you actually use";
+    } else { $("outEff").textContent = "—"; $("outEffNote").textContent = ""; }
+
+    const usedCUh = Math.min(m.totalCUh, availableCUh);
+    const unpausableCUh = Math.min(cu * unpausable, Math.max(0, availableCUh - usedCUh));
+    const idleCUh = Math.max(0, availableCUh - usedCUh - unpausableCUh);
+    const wUsedReal = availableCUh > 0 ? usedCUh / availableCUh * 100 : 0;
+    const wUsed = Math.max(wUsedReal, usedCUh > 0 ? 0.4 : 0);
+    const wPause = availableCUh > 0 ? unpausableCUh / availableCUh * 100 : 0;
+    $("segUsed").style.width = wUsed + "%";
+    $("segPause").style.width = wPause + "%";
+    $("segIdle").style.width = Math.max(0, 100 - wUsed - wPause) + "%";
+    $("legUsed").textContent = wUsedReal > 0 && wUsedReal < 0.01 ? "< 0.01 %" : pct(wUsedReal, wUsedReal < 1 ? 2 : 1);
+    $("legIdle").textContent = pct(availableCUh > 0 ? idleCUh / availableCUh * 100 : 0);
+    $("legPause").textContent = pct(wPause);
+    $("barNote").textContent =
+      "Your entire workload is " + num(m.totalCUh, 1) + " of the " + num(availableCUh) +
+      " CU-hours you are billed for. The hatched block is what you bought, did not use, and could not switch off.";
+
+    const sb = $("skuBody"); sb.textContent = "";
+    let firstFit = true;
+    SKUS.forEach((c) => {
+      const fits = c >= m.needed;
+      const cost = activeHours * c * rate;
+      const util = c * activeHours > 0 ? m.totalCUh / (c * activeHours) * 100 : 0;
+      const tr = document.createElement("tr");
+      if (fits && firstFit) { tr.className = "fit"; firstFit = false; }
+      else if (!fits) tr.className = "toosmall";
+      ["F" + c, String(c), fits ? "yes" : "throttles", usd(cost),
+       util < 0.01 && util > 0 ? "< 0.01 %" : pct(util, util < 1 ? 2 : 1)]
+        .forEach((t, i) => {
+          const td = document.createElement("td");
+          if (i > 0) td.className = "num";
+          td.textContent = t; tr.appendChild(td);
+        });
+      sb.appendChild(tr);
+    });
+
+    $("formulas").textContent = [
+      "queries/session  = open burst + rate x minutes = " + num(m.qOpen) + " + " +
+        num(n("daxPerMin"), 1) + " x " + num(m.sessMin) + " = " + num(m.qTotal, 1),
+      "",
+      "per session      = static + queries x rate x GB^e + database + udf",
+      "                 = " + num(m.perSession, 2) + " CU-seconds   (drives the BILL)",
+      "opening burst    = static + open-queries x rate x GB^e + database + udf",
+      "                 = " + num(m.burstCUs, 2) + " CU-seconds   (drives the PEAK)",
+      "",
+      "peak CU          = concurrent x burst / smoothing-window  +  background average",
+      "                 = " + num(m.concurrent, 1) + " x " + num(m.burstCUs, 2) + " / " +
+        num(m.smooth) + "  +  " + num(m.backgroundAvgCU, 2) + "  =  " + num(m.peakCU, 2) + " CU",
+      "",
+      "SKU needed       = peak x headroom = " + num(m.peakCU, 2) + " x " + num(n("cHead"), 2) +
+        " = " + num(m.needed, 2) + " CU   ->   F" + m.fitSku,
+      "",
+      "capacity-hours   = CU-seconds / 3600 = " + num(m.totalCUh, 1) + " CU-hours",
+      "average CU       = CU-seconds / seconds in month = " + num(m.avgCU, 2) + " CU",
+      "",
+      "bill             = active hours x SKU CU x rate = " + usd(bill),
+      "unpausable       = hours x (uptime_with - uptime_without) = " + num(unpausable) + " h",
+      "pause you cannot take = " + usd(pauseCost) + " / month"
+    ].join("\n");
+  }
+
+  document.querySelectorAll("input, select").forEach((el) => {
+    el.addEventListener("input", render);
+    el.addEventListener("change", render);
+  });
+  render();
+})();
+</script>
+</body>
+</html>

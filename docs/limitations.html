@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric Apps — the three limitations · Fabric App Learnings</title>
+<meta name="description" content="Rayfin functions, the public URL, and capacity utilisation. Measured, not felt." />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Fabric App <span>Learnings</span></a>
+    <div class="links">
+        <a href="index.html">Home</a>
+        <a href="drone-camera.html">Drone camera</a>
+        <a href="3d-terrain.html">3D terrain</a>
+        <a href="limitations.html" class="active">Limitations</a>
+        <a href="photoreal-maps.html">Photoreal maps</a>
+        <a href="choosing.html">Choosing a front end</a>
+        <a href="calculator/index.html">Calculator</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero compact">
+  <div class="wrap">
+    <h1>Fabric Apps — the three limitations</h1>
+    <p class="sub">Rayfin functions, the public URL, and capacity utilisation. Measured, not felt.</p>
+    
+  </div>
+</header>
+
+<section>
+  <div class="wrap reading">
+    <div class="toc"><strong>On this page</strong>
+    <ul>
+      <li><a href="#1-rayfin-functions-genuinely-blocked">1 · Rayfin functions — 🔴 genuinely blocked</a></li>
+      <li><a href="#2-the-public-url-awkward-not-blocked">2 · The public URL — 🟡 awkward, not blocked</a></li>
+      <li><a href="#3-pricing-low-capacity-utilisation-real-and-quantifiable">3 · Pricing / low capacity utilisation — 🟡 real, and quantifiable</a></li>
+    </ul>
+  </div>
+    <article>
+<blockquote>
+<p>What I hit building ~20 Fabric Apps. Written so you don't lose the same days I did.
+Verified 2026-08-12. Everything here is measured, not felt.</p>
+</blockquote>
+<p><strong>The rule underneath all three:</strong> name the limitation before your audience does. You lose nothing —
+they'll find it in week two anyway — and you gain the right to be believed about everything else.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Limitation</th>
+<th>Verdict</th>
+<th>The one-line answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Rayfin functions</strong></td>
+<td>🔴 genuinely blocked</td>
+<td>"No server-side Rayfin function today. Use a Fabric User Data Function or an Azure Container App — both proven, both cheap."</td>
+</tr>
+<tr>
+<td><strong>The public URL</strong></td>
+<td>🟡 awkward, not blocked</td>
+<td>"The shell is public and the hostname isn't yours. The data is still Entra-gated. If your <em>layout</em> is confidential, wait."</td>
+</tr>
+<tr>
+<td><strong>Pricing / utilisation</strong></td>
+<td>🟡 real, and quantifiable</td>
+<td>"The app barely uses CU. The problem is it can't be off — so you buy an always-on capacity for a workload using under 1 % of it."</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="1-rayfin-functions-genuinely-blocked">1 · Rayfin functions — 🔴 genuinely blocked</h2>
+<ul>
+<li>Across <strong>65 <code>rayfin.yml</code> files</strong> in my workspace, <code>functions.enabled</code> is <strong><code>false</code> in every single
+  one</strong>. Not one app uses them. That isn't taste; it's the state of the feature.</li>
+<li>The semantic-model connector fails with a specific, non-actionable error:<blockquote>
+<p><code>ConnectorFunction invocation is not enabled for this workspace</code></p>
+</blockquote>
+</li>
+<li>⚠️ <strong>It is not a config mistake and there is no setting to flip.</strong> In my case <code>rayfin up</code> reported
+  <em>"Runtime settings applied"</em>, the <code>rayfin.yml</code> was valid (<code>version: "1"</code> <strong>and</strong>
+  <code>auth: {type: delegated}</code>), <strong>all 169 tenant settings were scanned</strong> — only <code>AppBackendTenant</code> and
+  <code>EnableAnonymousDataAccessForFabricApps</code> exist, and neither is it. <strong>No Learn doc covers it.</strong>
+  That cost a day.</li>
+</ul>
+<h3 id="two-proven-escape-hatches">Two proven escape hatches</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Language</th>
+<th>Use it when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Fabric User Data Function</strong>, invoked by REST</td>
+<td>Python</td>
+<td>short request/response, stays inside Fabric, no extra Azure resource</td>
+</tr>
+<tr>
+<td><strong>Azure Container App</strong></td>
+<td>anything</td>
+<td>long CPU work, native binaries, or holding a connection open</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Why some apps genuinely had to use a container</strong> — these are the real reasons, not preferences:
+- A CP-SAT (OR-Tools) solver needs seconds-to-minutes of CPU and a native binary:
+  <em>"must not run in a browser or a Fabric UDF timeout window."</em>
+- A live AIS feed: <em>"a container holds the upstream socket open, which a request-scoped function
+  cannot."</em>
+- Any Foundry-agent chat assistant, because the browser cannot hold a credential.</p>
+<h3 id="the-cost-objection-pre-empted">The cost objection, pre-empted</h3>
+<p><em>"So now I need Azure too?"</em> — yes, and it's noise. Measured over six days on my tenant:
+<strong>Container Apps + ACR = $4.56</strong>, i.e. <strong>0.5 %</strong> of Azure spend. Fabric capacity was <strong>94.6 %</strong>.
+The escape hatch is never what costs money.</p>
+<hr />
+<h2 id="2-the-public-url-awkward-not-blocked">2 · The public URL — 🟡 awkward, not blocked</h2>
+<p><strong>Four separate issues get bundled into "the public URL problem". Separate them or the conversation
+goes nowhere.</strong></p>
+<h3 id="21-the-shell-is-genuinely-public">2.1 The shell is genuinely public</h3>
+<p>A plain <code>GET</code> on the app root — and on <code>/assets/index-*.js</code> — returns <strong>200 to anyone</strong>.
+- <strong>App shell = public. App data = Entra-gated.</strong> Defensible, but <em>not</em> what people assume when they
+  see a Fabric sign-in screen.
+- Everything in <code>public/</code> ships. Every <code>VITE_*</code> value is in the bundle. An <code>X-App-Key</code> is a speed
+  bump, not authentication.
+- ⛔ <strong>There is no way to require Entra before the bundle is served.</strong> If your app's <em>layout</em> itself
+  reveals something confidential, that's a genuine blocker — say so and stop.
+- The related dial is <strong>tenant-wide</strong>: <code>Enable anonymous data access for Fabric Apps (Preview)</code>.</p>
+<h3 id="22-the-hostname-isnt-yours-and-it-can-change">2.2 The hostname isn't yours, and it can change</h3>
+<p>Format: <code>https://&lt;adjective&gt;-&lt;noun&gt;-&lt;hash&gt;-&lt;region&gt;.webapp.fabricapps.net</code>
+- <strong>No custom domain. No CNAME. No vanity URL.</strong> The platform owns the hostname.
+- <strong>It changes if the binding is lost.</strong> I have one app whose <code>rayfin.yml</code> carries <em>two</em> hostnames;
+  elsewhere a redeploy moved the host and broke sign-in with <strong><code>AADSTS50011</code></strong>.
+- ✅ Stable as long as <strong><code>rayfin/.deployments.json</code> survives</strong> — it binds <code>fabricItemId</code> +
+  <code>hostingUrl</code>, keyed by workspace slug. Lose it, get a new host.
+- ⚠️ <code>rayfin up</code> <strong>rewrites</strong> <code>rayfin.yml</code> and re-adds whatever host it just deployed to. And
+  <strong><code>staticapp deploy</code> alone does not re-register redirect URIs</strong> — you need a full <code>rayfin up</code>.
+- ⚠️ If the app uses <strong>raw MSAL</strong> (not Fabric brokered auth), the new origin must <em>also</em> be added to
+  the Entra app registration's SPA <code>redirectUris</code> <strong>by hand</strong>. <code>rayfin.yml</code>'s <code>allowedRedirectUris</code>
+  is a Fabric setting — <strong>it does not touch Entra.</strong></p>
+<h3 id="23-check-whats-in-your-deploymentsjson">2.3 🔴 Check what's in your <code>.deployments.json</code></h3>
+<p>That file contains a <strong><code>publishableKey</code></strong> plus tenant/workspace/item IDs — and in my repos it's
+<strong>committed in some and gitignored in others</strong>. Decide the convention once, before anything goes
+public. Right now my own repos disagree with each other, which is exactly how this leaks.</p>
+<h3 id="24-you-cannot-un-publish">2.4 You cannot un-publish</h3>
+<p><code>rayfin up</code> <strong>never deletes</strong>. Removing a file locally and redeploying is <strong>not</strong> a withdrawal — the
+old path keeps serving its old bytes (verified with a cache-busting query string, so it's the host,
+not a CDN). The only withdrawal is publishing a <strong>tombstone</strong> over the same path.</p>
+<blockquote>
+<p>🔴 <strong>The story that makes this concrete.</strong> One of my apps had a <code>public/*.json</code> pairing a cadastral
+ID, an exact building footprint, a building function and a damage grade for <strong>2,080 real
+buildings</strong> — answering <strong>HTTP 200 to anyone</strong>. A source comment said those fields <em>"never reach
+the client"</em>. True of the UI. False of the deploy. <strong>Vite copies <code>public/</code> → <code>dist/</code>.</strong></p>
+<p>Two rules out of it: <em>anything your governance rules forbid showing must not sit under <code>public/</code></em>,
+and <em>deleting it locally is not removing it</em>.</p>
+</blockquote>
+<p>⚠️ <strong>Bonus trap:</strong> every Fabric static host is an <strong>SPA catch-all</strong> — any unknown path returns
+<code>index.html</code> with <strong>HTTP 200</strong>. So "the URL works" proves nothing. Check the <code>&lt;title&gt;</code>. This is how
+I caught two wrong demo URLs the day before a talk.</p>
+<hr />
+<h2 id="3-pricing-low-capacity-utilisation-real-and-quantifiable">3 · Pricing / low capacity utilisation — 🟡 real, and quantifiable</h2>
+<h3 id="the-sharp-version">The sharp version</h3>
+<p>The problem is <strong>not</strong> that a Fabric App burns CU. <strong>It's that it can't be off.</strong></p>
+<p>A paused capacity makes the app <strong>dead</strong>: root serves <code>HTTP 500</code>, lazy chunks 500, UDF invokes 500.
+<code>rayfin up</code> fails with <code>404 The requested endpoint does not exist</code> before it ever surfaces
+<code>CapacityNotActive</code>. After a resume it serves 408s for another 20–30 s while the workload warms.</p>
+<p><strong>So hosting an app converts a schedulable capacity into a 24/7 one, and every cost lever the
+platform gives you is precisely the thing that breaks it.</strong></p>
+<h3 id="the-evidence-two-capacities-one-tenant-same-week">The evidence — two capacities, one tenant, same week</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>hosts Fabric Apps</th>
+<th>hosts none</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Uptime</td>
+<td><strong>91 %</strong></td>
+<td><strong>26 %</strong></td>
+</tr>
+<tr>
+<td>Cost that week</td>
+<td><strong>$714.53</strong> (74 % of all Azure spend)</td>
+<td>$196.33</td>
+</tr>
+</tbody>
+</table></div>
+<p>Same owner, same schedule, same Logic Apps. <strong>The app is the entire difference.</strong> The daily 18:00
+pause is undone within minutes, every day, because the app has to answer.</p>
+<h3 id="the-arithmetic">The arithmetic</h3>
+<pre><code>capacity-hours   = CU-seconds / (SKU CU × 3600)
+utilisation      = capacity-hours used / hours the capacity was Active
+unpausable hours = hours × (uptime_with_app − uptime_without_app)
+cost of the pause you can't take = unpausable hours × SKU CU × rate
+</code></pre>
+<p>On a typical small app (200 users, Direct Lake, ~12 opening queries, 3 % concurrency): peak
+<strong>0.35 CU</strong> → fits an <strong>F2</strong>. On an F32 you'd be paying <strong>~$2,885/month for a pause you're not
+allowed to take</strong>, at an effective <strong>$3,635 per CU-hour actually used</strong> versus $0.19 list.</p>
+<p>⚠️ <strong>If the workload already runs a 24/7 capacity for other reasons</strong>, the marginal cost of the app
+really is near zero — say so. That's the case where this objection evaporates entirely.</p>
+    </article>
+    <p style="margin-top:3rem"><a class="btn btn-outline"
+       href="https://github.com/KornAlexander/Fabric-App-Learnings/blob/main/playbooks/fabric-app-limits.md">Read the markdown source on GitHub</a></p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <p><strong>Personal field notes.</strong> Written for myself while building things, shared in case
+       they save someone else the same days.</p>
+    <p>Not affiliated with, endorsed by, or representing Microsoft. Nothing here is official guidance,
+       and nothing here is tested beyond my own use.</p>
+    <p>Markdown sources and issues: <a href="https://github.com/KornAlexander/Fabric-App-Learnings">https://github.com/KornAlexander/Fabric-App-Learnings</a> · MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>

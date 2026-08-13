@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Capacity calculator (unofficial, untested) · Fabric App Learnings</title>
+<meta name="description" content="An unofficial, untested estimator for what a Fabric App costs in capacity units — and what the pause you can no longer take is worth." />
+<link rel="stylesheet" href="../assets/css/style.css" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="logo" href="../index.html">Fabric App <span>Learnings</span></a>
+    <div class="links">
+        <a href="../index.html">Home</a>
+        <a href="../drone-camera.html">Drone camera</a>
+        <a href="../3d-terrain.html">3D terrain</a>
+        <a href="../limitations.html">Limitations</a>
+        <a href="../photoreal-maps.html">Photoreal maps</a>
+        <a href="../choosing.html">Choosing a front end</a>
+        <a href="index.html" class="active">Calculator</a>
+    </div>
+  </div>
+</nav>
+
+<section style="padding-top:2.5rem;padding-bottom:2rem">
+  <div class="wrap">
+
+    <div class="disclaimer">
+      <p class="headline">⚠️ Not an official Microsoft tool. Not tested. Not supported.</p>
+      <p>
+        This is a <strong>personal side project</strong>. The CU coefficients it uses are
+        <strong>my own rough estimates</strong>, not published Microsoft figures — they are all
+        visible and editable under <em>Assumptions</em> at the bottom of the tool, and you should
+        replace them with numbers measured in the <strong>Fabric Capacity Metrics</strong> app for
+        your own tenant.
+      </p>
+      <p>
+        <strong>Do not use this to quote a customer, size a purchase, or make a budget decision.</strong>
+        Treat it as a way to compare shapes and find roughly where a SKU boundary sits — nothing more.
+        Pricing and platform behaviour both drift; verify against Azure pricing before relying on any
+        number you see here.
+      </p>
+    </div>
+
+    <h2 style="font-size:1.9rem;font-weight:800;color:var(--accent);margin:0 0 .5rem">
+      What does an always-on Fabric App actually cost?</h2>
+    <p class="lead" style="max-width:70ch">
+      Four groups of plain questions → an expected CU consumption, the smallest capacity that survives
+      your peak, and the bill. Including the part almost nobody budgets for: a Fabric App
+      <strong>cannot be switched off</strong>, so it takes your pause button with it. Nothing is sent
+      anywhere — the whole thing runs in your browser and makes no network calls.
+    </p>
+
+    <p style="margin:0 0 1.5rem">
+      <a class="btn btn-outline" href="tool.html" target="_blank" rel="noopener">Open full screen ↗</a>
+      <a class="btn btn-outline" href="../limitations.html">Read why it exists</a>
+    </p>
+
+    <iframe class="calc-frame" src="tool.html" title="Fabric App CU and capacity calculator"
+            loading="lazy"></iframe>
+
+    <p style="color:var(--text-muted);font-size:.9rem;margin-top:1rem">
+      Trouble with the embed? <a href="tool.html">Open the calculator on its own page</a> — it is a
+      single self-contained HTML file you can also save and run offline.
+    </p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <p><strong>Personal field notes.</strong> Written for myself while building things, shared in case
+       they save someone else the same days.</p>
+    <p>Not affiliated with, endorsed by, or representing Microsoft. Nothing here is official guidance,
+       and nothing here is tested beyond my own use.</p>
+    <p>Markdown sources and issues:
+       <a href="https://github.com/KornAlexander/Fabric-App-Learnings">github.com/KornAlexander/Fabric-App-Learnings</a>
+       · MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>

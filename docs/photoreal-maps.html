@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Photoreal 3D maps — what you actually pay for · Fabric App Learnings</title>
+<meta name="description" content="Renderer, broker and content are three different things. Most cost surprises come from conflating them." />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Fabric App <span>Learnings</span></a>
+    <div class="links">
+        <a href="index.html">Home</a>
+        <a href="drone-camera.html">Drone camera</a>
+        <a href="3d-terrain.html">3D terrain</a>
+        <a href="limitations.html">Limitations</a>
+        <a href="photoreal-maps.html" class="active">Photoreal maps</a>
+        <a href="choosing.html">Choosing a front end</a>
+        <a href="calculator/index.html">Calculator</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero compact">
+  <div class="wrap">
+    <h1>Photoreal 3D maps — what you actually pay for</h1>
+    <p class="sub">Renderer, broker and content are three different things. Most cost surprises come from conflating them.</p>
+    
+  </div>
+</header>
+
+<section>
+  <div class="wrap reading">
+    <div class="toc"><strong>On this page</strong>
+    <ul>
+      <li><a href="#tldr-the-six-things-that-matter">TL;DR — the six things that matter</a></li>
+      <li><a href="#1-how-harbour-pulse-actually-does-it">1. How Harbour Pulse actually does it</a></li>
+      <li><a href="#2-who-is-actually-behind-cesium">2. Who is actually behind Cesium?</a></li>
+      <li><a href="#3-the-licensing-reality">3. The licensing reality</a></li>
+      <li><a href="#4-can-i-get-the-same-realistic-outcome-without-the-cesium-token">4. Can I get the same realistic outcome without the Cesium token?</a></li>
+      <li><a href="#5-the-options-compared">5. The options, compared</a></li>
+      <li><a href="#5a-the-reference-implementation-already-exists-campus-scheduler">5a. The reference implementation already exists — Campus-Scheduler</a></li>
+      <li><a href="#5b-would-a-cesium-ion-token-improve-the-campus-solution">5b. Would a Cesium ion token improve the campus solution?</a></li>
+      <li><a href="#6-cost-concretely">6. Cost, concretely</a></li>
+      <li><a href="#7-recommendation">7. Recommendation</a></li>
+      <li><a href="#8-open-questions-to-confirm-before-committing-to-a-stack">8. Open questions to confirm before committing to a stack</a></li>
+      <li><a href="#references">References</a></li>
+    </ul>
+  </div>
+    <article>
+<p>Analysis of how <strong>Harbour Pulse</strong> (<code>fabric-harbour-pulse</code>) renders its photoreal Sydney Harbour,
+what is reusable for our other 3D solutions, and what the licensing actually permits.</p>
+<p>Researched 2026-08-10 against CesiumJS 1.143, Cesium ion pricing, and the Google Maps Platform price list.</p>
+<hr />
+<h2 id="tldr-the-six-things-that-matter">TL;DR — the six things that matter</h2>
+<ol>
+<li><strong>The photorealism is Google's, not Cesium's.</strong> Cesium is the renderer and the broker.
+   The textured 3D mesh comes from <strong>Google Photorealistic 3D Tiles</strong>.</li>
+<li><strong>CesiumJS is Apache-2.0</strong> — free, commercial use explicitly permitted, no token needed.
+   Only <strong>Cesium ion</strong> (the hosted content/CDN service) is licensed.</li>
+<li><strong>The Cesium ion free "Community" tier is non-commercial.</strong> It is <em>not</em> valid for a
+   company with &gt;$50K revenue, for government projects, or for funded educational research —
+   with one carve-out that is usually the relevant one: <em>"exploratory commercial or government
+   development, e.g. evaluating if Cesium ion will meet your needs."</em> Internal demos sit inside
+   that carve-out. Anything you hand to another organisation to run does not.</li>
+<li><strong>Yes, you can get the identical photoreal result without a Cesium token</strong> — set
+   <code>Cesium.GoogleMaps.defaultApiKey</code> and go straight to Google. But you swap a $149/month
+   flat fee for <strong>metered per-tile billing at $6.00 / 1,000 tiles with only 1,000 free per month</strong>,
+   which is the more dangerous of the two options for a demo that gets left running.</li>
+<li><strong>OpenStreetMap is not the "free commercial" answer people assume.</strong> The <em>data</em> is fine
+   (ODbL). The <em>public tile server</em> (<code>tile.openstreetmap.org</code>) and the <em>public Overpass API</em>
+   are donated infrastructure with usage policies that rule out production and heavy use.
+   And visually it is not close — grey extruded boxes, not a photoreal city. <strong>OSM also has no
+   aerial imagery whatsoever</strong> — it is a vector database, so it cannot replace a satellite or
+   orthophoto layer.</li>
+<li><strong>There is a genuinely free, licence-clean, good-looking option, and we already ship it:</strong>
+   German state <strong>LoD2 + DOP20 (20 cm) + DGM1</strong>, baked to static files, rendered in Three.js with
+   no map service at runtime. That is what <strong>Campus-Scheduler</strong> does across eight AOIs — see §5a.</li>
+</ol>
+<hr />
+<h2 id="1-how-harbour-pulse-actually-does-it">1. How Harbour Pulse actually does it</h2>
+<p>All of it lives in one file, <code>src/components/CesiumView.tsx</code>.
+The design is a clean <strong>one-flag fork</strong>: a single env var decides between two entirely different
+visual stacks.</p>
+<pre><code class="language-ts">const ION_TOKEN = import.meta.env.VITE_CESIUM_ION_TOKEN;
+</code></pre>
+<h3 id="path-a-token-present-photoreal">Path A — token present (photoreal)</h3>
+<pre><code class="language-ts">if (ION_TOKEN) Ion.defaultAccessToken = ION_TOKEN;
+
+const viewer = new Viewer(div.current!, {
+  contextOptions: { webgl: { preserveDrawingBuffer: true } },
+  baseLayer: undefined,                    // Google tiles supply their own colour
+  terrain: Terrain.fromWorldTerrain(),     // Cesium World Terrain (ion asset)
+  // ...all default widgets disabled
+});
+
+void createGooglePhotorealistic3DTileset()
+  .then((ts) =&gt; viewer.scene.primitives.add(ts))
+  .catch(() =&gt; {
+    // second-choice: Cesium OSM Buildings (untextured but global)
+    void createOsmBuildingsAsync().then((ts) =&gt; viewer.scene.primitives.add(ts));
+  });
+</code></pre>
+<p>Three separate ion-gated assets are in play here, which is the bit most people miss:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>What it gives</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>createGooglePhotorealistic3DTileset()</code></td>
+<td>Textured photogrammetry mesh — the actual "wow"</td>
+<td><strong>Google</strong>, brokered by ion</td>
+</tr>
+<tr>
+<td><code>Terrain.fromWorldTerrain()</code></td>
+<td>Global elevation</td>
+<td>Cesium ion asset</td>
+</tr>
+<tr>
+<td><code>createOsmBuildingsAsync()</code></td>
+<td>Global untextured building shells</td>
+<td>Cesium ion asset (from OSM data)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="path-b-no-token-keyless-fallback">Path B — no token (keyless fallback)</h3>
+<pre><code class="language-ts">baseLayer: ImageryLayer.fromProviderAsync(
+  Promise.resolve(new OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' })),
+  {},
+),
+terrain: undefined,        // flat ellipsoid — no elevation at all
+</code></pre>
+<p>…plus the app fetches its own building footprints from the <strong>Overpass API</strong> and extrudes them as
+coloured polygons — in <code>src/services/buildings.ts</code>:</p>
+<pre><code class="language-ts">const OVERPASS = 'https://overpass-api.de/api/interpreter';
+const BBOX = [-33.874, 151.198, -33.852, 151.221];  // hard-coded central Sydney
+const query = `[out:json][timeout:30];(way[&quot;building&quot;](${s},${w},${n},${e}););out geom;`;
+</code></pre>
+<p>Height is <code>tags.height</code> → else <code>building:levels × 3.3</code> → else a 9 m default, and colour is a
+four-stop ramp from <code>#d3dae0</code> (low-rise) to <code>#6d8296</code> (high-rise).</p>
+<h3 id="what-the-fallback-costs-you-visually">What the fallback costs you visually</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>Path A (ion token)</th>
+<th>Path B (keyless)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Buildings</td>
+<td>Photogrammetry mesh, real façades, roofs, cranes, moored boats</td>
+<td>Flat grey extruded prisms</td>
+</tr>
+<tr>
+<td>Ground</td>
+<td>Google aerial imagery draped on real terrain</td>
+<td>OSM <em>road map</em> raster (roads and labels, not aerial)</td>
+</tr>
+<tr>
+<td>Terrain</td>
+<td>Cesium World Terrain</td>
+<td>None — perfect ellipsoid</td>
+</tr>
+<tr>
+<td>Coverage</td>
+<td>Global (where Google has captured)</td>
+<td>One hard-coded bounding box</td>
+</tr>
+<tr>
+<td>Trees, landmarks</td>
+<td>Present</td>
+<td>Absent</td>
+</tr>
+</tbody>
+</table></div>
+<p>It is not a degraded version of the same picture. It is a different product.</p>
+<h3 id="small-implementation-details-worth-stealing">Small implementation details worth stealing</h3>
+<ul>
+<li><code>preserveDrawingBuffer: true</code> — required if you ever want <code>canvas.toDataURL()</code> or a
+  Playwright screenshot of the WebGL canvas. Costs a little performance; enable it deliberately.</li>
+<li>Every default Cesium widget is switched off (<code>baseLayerPicker</code>, <code>geocoder</code>, <code>homeButton</code>,
+  <code>timeline</code>, <code>animation</code>, <code>infoBox</code>, <code>selectionIndicator</code>, …). Cesium looks like a toy demo
+  until you do this.</li>
+<li><code>scene.globe.enableLighting = true</code> + <code>skyAtmosphere.show = true</code> — cheap realism.</li>
+<li>Right-drag rebound to tilt/orbit; wheel kept for zoom:
+  <code>ts
+  camCtrl.tiltEventTypes = [CameraEventType.RIGHT_DRAG, CameraEventType.PINCH];</code></li>
+<li>Ferries are glTF models placed at <strong>+23 m</strong> ellipsoidal height, because Sydney's geoid offset
+  puts sea level there. Get this wrong and your assets float or sink.</li>
+<li>Heading is derived from consecutive positions (<code>bearing()</code> helper) because the TfNSW feed has
+  no bearing field — with a <code>HEADING_OFFSET_DEG = -90</code> correction because the model's bow is
+  authored along +Z.</li>
+</ul>
+<hr />
+<h2 id="2-who-is-actually-behind-cesium">2. Who is actually behind Cesium?</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Legal entity</strong></td>
+<td>Cesium GS, Inc., Philadelphia, PA</td>
+</tr>
+<tr>
+<td><strong>Origin</strong></td>
+<td>Started 2011 inside <strong>Analytical Graphics, Inc. (AGI)</strong>, an aerospace software firm, to visualise objects in space. Led by <strong>Patrick Cozzi</strong>. Named after the element used in atomic clocks.</td>
+</tr>
+<tr>
+<td><strong>Open sourced</strong></td>
+<td>2012</td>
+</tr>
+<tr>
+<td><strong>Spun out</strong></td>
+<td>2019, as an independent venture-backed company</td>
+</tr>
+<tr>
+<td><strong>Acquired</strong></td>
+<td><strong>September 2024 — by Bentley Systems</strong> (Nasdaq: <strong>BSY</strong>), the Exton, PA infrastructure-engineering software company (MicroStation, ProjectWise, SYNCHRO, Seequent). ~$1.5 bn revenue, 5,800 staff.</td>
+</tr>
+<tr>
+<td><strong>Today</strong></td>
+<td>Cesium is a Bentley business unit, being folded into Bentley's <strong>iTwin</strong> digital-twin platform. Bentley engineers now commit to the CesiumJS repo directly.</td>
+</tr>
+<tr>
+<td><strong>Standards</strong></td>
+<td>Cesium authored <strong>3D Tiles</strong>, now an <strong>OGC Community Standard</strong>. Also co-authored glTF with Khronos.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Why this matters to us commercially:</strong> Cesium is no longer a neutral startup — it belongs to
+<strong>Bentley, a Microsoft partner but also a digital-twin platform vendor</strong> whose iTwin platform
+overlaps with what we position around Fabric Real-Time Intelligence and Azure Digital Twins.
+Worth knowing before you put a Cesium logo on a slide in a digital-twin conversation.</p>
+<p>Google relationship: Cesium partnered with Google Maps Platform in <strong>May 2023</strong> to render the
+then-new Photorealistic 3D Tiles. Cesium resells/brokers Google's tiles through ion.</p>
+<hr />
+<h2 id="3-the-licensing-reality">3. The licensing reality</h2>
+<h3 id="cesiumjs-the-library">CesiumJS — the library</h3>
+<p><strong>Apache License 2.0.</strong> Commercial use, modification, distribution and patent grant all
+permitted. Conditions are only: keep the licence and copyright notice, state changes.
+There is <strong>no attribution-in-UI requirement</strong> and <strong>no token requirement</strong> for the library itself.</p>
+<blockquote>
+<p>The "Cesium ion" logo you see in the corner of the Harbour Pulse app is not the CesiumJS
+licence talking — it is the <strong>ion data credit</strong>, injected because ion-hosted assets are in use.</p>
+</blockquote>
+<h3 id="cesium-ion-the-hosted-content-service">Cesium ion — the hosted content service</h3>
+<p>This is where money and restrictions live.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Price</th>
+<th>Rights</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Community</strong></td>
+<td>Free</td>
+<td><strong>Personal and non-commercial use only</strong></td>
+</tr>
+<tr>
+<td><strong>Commercial</strong></td>
+<td><strong>$149/mo</strong> individual · <strong>$524/mo</strong> team</td>
+<td>Commercial use <em>within your organisation</em></td>
+</tr>
+<tr>
+<td><strong>Premium</strong></td>
+<td>$499/mo individual · $874/mo team</td>
+<td>Same, larger quotas</td>
+</tr>
+<tr>
+<td><strong>Custom / Self-Hosted</strong></td>
+<td>Contact sales</td>
+<td>Enterprise, on-prem</td>
+</tr>
+</tbody>
+</table></div>
+<p>Cesium's own FAQ — <strong>you need a paid commercial licence if</strong>:</p>
+<ul>
+<li>your company makes <strong>more than $50K annual gross revenue</strong>, or has raised &gt;$50K, <strong>or</strong></li>
+<li>you are working on a <strong>government project</strong>, <strong>or</strong></li>
+<li>you are working on <strong>funded educational research</strong>, <strong>or</strong></li>
+<li>you exceed the free quota.</li>
+</ul>
+<p>And the free Community account <strong>may</strong> be used for:</p>
+<ul>
+<li>non-commercial personal projects, <strong>or</strong></li>
+<li><strong>exploratory commercial or government development — e.g. evaluating whether ion meets your needs</strong>, <strong>or</strong></li>
+<li>unfunded educational activities.</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>Note the asterisk on every paid tier:</strong> <em>"Contact us if you plan to integrate Cesium ion
+into solutions used outside your organization."</em> An app you hand to someone else, or one that
+runs in <strong>their</strong> tenant, is exactly that case — the standard Commercial plan does not obviously
+cover it. That is an integration/OEM conversation with Cesium sales.</p>
+</blockquote>
+<p><strong>Where that leaves your current token:</strong> using it to build and show internal demos and prototypes
+is defensible under "exploratory development". Publishing those apps for other organisations to use,
+or shipping the token in a bundle someone else runs, is not. And note the token <strong>is</strong> in the public
+JavaScript bundle of every deployed app — anyone can read it and burn your quota.</p>
+<h3 id="google-photorealistic-3d-tiles-the-actual-imagery">Google Photorealistic 3D Tiles — the actual imagery</h3>
+<p>Governed by the <strong>Google Maps Platform Terms</strong>, billed on Google Cloud:</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>SKU</th>
+<th>Category</th>
+<th>Billable event</th>
+<th>Free/month</th>
+<th>Price</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Map Tiles API: Photorealistic 3D Tiles (<code>C6E1-98B2-DBD0</code>)</td>
+<td><strong>Enterprise</strong></td>
+<td><strong>Every request that returns a 3D tile</strong></td>
+<td><strong>1,000</strong></td>
+<td><strong>$6.00 / 1,000</strong></td>
+</tr>
+<tr>
+<td>Map Tiles API: 2D Map Tiles</td>
+<td>Essentials</td>
+<td>Request returning a 2D tile</td>
+<td>100,000</td>
+<td>$0.60 / 1,000</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Read the billable event twice.</strong> It is <strong>per tile</strong>, not per session or per map load. A single
+user flying around a city for a few minutes pulls <strong>hundreds to thousands of tiles</strong>. The 1,000
+free tiles are roughly <em>one short demo</em>. There are also hard attribution requirements — the
+Google logo and the data-attribution string must stay visible.</p>
+<h3 id="openstreetmap-the-keyless-fallback">OpenStreetMap — the keyless fallback</h3>
+<p>Two separate things, and people conflate them:</p>
+<ul>
+<li><strong>The data</strong> — ODbL 1.0. Free, commercial use fine, requires attribution and has share-alike
+  obligations on derived databases.</li>
+<li><strong>The public servers</strong> — <code>tile.openstreetmap.org</code> is governed by the
+  <strong>OSMF Tile Usage Policy</strong>: donated, volunteer-funded, and it explicitly rules out
+  heavy/bulk/commercial use. <code>overpass-api.de</code> is the same deal for the Overpass API.</li>
+</ul>
+<p>So Harbour Pulse's "keyless" path is fine for local dev and a one-off demo, and <strong>not</strong> a
+licensing-clean production posture. It just moves the problem from a bill to an acceptable-use
+policy. If you want OSM in production you self-host tiles or buy from MapTiler / Mapbox / Azure Maps.</p>
+<hr />
+<h2 id="4-can-i-get-the-same-realistic-outcome-without-the-cesium-token">4. Can I get the same realistic outcome without the Cesium token?</h2>
+<p><strong>Visually identical: yes — but only by going to Google directly.</strong> The photorealism is Google's
+asset. Cesium ion is a billing and delivery broker in front of it.</p>
+<p>I verified the API exists in the shipped CesiumJS 1.143:</p>
+<pre><code>Cesium.d.ts:8027  An API key is only required if you are directly using any Google Maps APIs,
+                  such as through {@link createGooglePhotorealistic3DTileset}.
+Cesium.d.ts:8038  var defaultApiKey: undefined | string;
+</code></pre>
+<p>So the ion-free photoreal path is a <strong>two-line change</strong>:</p>
+<pre><code class="language-ts">import { GoogleMaps, createGooglePhotorealistic3DTileset } from 'cesium';
+
+GoogleMaps.defaultApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+const ts = await createGooglePhotorealistic3DTileset();   // no ion token anywhere
+viewer.scene.primitives.add(ts);
+</code></pre>
+<p>Same code path, same mesh, same pixels. You lose two things: <strong>Cesium World Terrain</strong> and
+<strong>Cesium OSM Buildings</strong>, both of which are ion assets. (For photoreal you don't need either —
+the Google mesh contains the terrain. You'd only miss them outside Google's coverage.)</p>
+<p>Cesium 1.143 also ships <strong><code>Google2DImageryProvider</code></strong>, so Google satellite raster is reachable
+the same keyless-of-ion way:</p>
+<pre><code class="language-ts">GoogleMaps.defaultApiKey = &quot;your-api-key&quot;;
+const p = Google2DImageryProvider.fromUrl({ mapType: &quot;SATELLITE&quot; });
+</code></pre>
+<p><strong>Without Google at all: no.</strong> Nothing free reproduces photogrammetry-textured cities globally.
+The honest ceiling of the open stack is <em>geometrically accurate but untextured</em> — which for
+many of our use cases is genuinely enough (see Option D).</p>
+<hr />
+<h2 id="5-the-options-compared">5. The options, compared</h2>
+<h3 id="option-a-cesium-ion-token-what-harbour-pulse-does-today">Option A — Cesium ion token (what Harbour Pulse does today)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Two lines of code, works instantly</td>
+<td>Free tier is <strong>non-commercial</strong></td>
+</tr>
+<tr>
+<td>Bundles terrain + OSM Buildings + Google tiles behind one token</td>
+<td>$149/mo minimum to be commercially clean</td>
+</tr>
+<tr>
+<td><strong>Predictable flat cost</strong> — no per-tile surprise</td>
+<td>Token is public in the JS bundle; quota can be burned by anyone</td>
+</tr>
+<tr>
+<td>Cesium absorbs the Google relationship and billing</td>
+<td>Third-party dependency now owned by <strong>Bentley</strong></td>
+</tr>
+<tr>
+<td>Automatic attribution handling</td>
+<td>"Outside your organization" use needs a separate deal</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="option-b-direct-google-maps-platform-key">Option B — Direct Google Maps Platform key</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pixel-identical photorealism</strong>, no Cesium ion at all</td>
+<td><strong>$6.00 / 1,000 tiles</strong>, only 1,000 free — metered, uncapped, per tile</td>
+</tr>
+<tr>
+<td>No non-commercial restriction — normal GMP commercial terms</td>
+<td>A forgotten open browser tab keeps billing</td>
+</tr>
+<tr>
+<td>One less vendor between us and the data</td>
+<td>Loses Cesium World Terrain + OSM Buildings</td>
+</tr>
+<tr>
+<td>Billing lands on an existing GCP account</td>
+<td><strong>Google Cloud spend at Microsoft</strong> — political, and probably a non-starter</td>
+</tr>
+<tr>
+<td>Key restrictable by HTTP referrer</td>
+<td>Key still public in the bundle → referrer restriction is mandatory</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="option-c-keyless-osm-the-built-in-fallback">Option C — Keyless OSM (the built-in fallback)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zero cost, zero keys, zero accounts</td>
+<td><strong>Not photoreal</strong> — grey boxes on a road map</td>
+</tr>
+<tr>
+<td>Data licence (ODbL) is genuinely open</td>
+<td>Public tile/Overpass servers <strong>prohibit production use</strong></td>
+</tr>
+<tr>
+<td>Great for local dev and CI</td>
+<td>No terrain at all</td>
+</tr>
+<tr>
+<td>No vendor lock-in</td>
+<td>Overpass is slow and rate-limited; bbox is hard-coded per city</td>
+</tr>
+<tr>
+<td>Honest fallback so the app never hard-fails</td>
+<td>Share-alike obligations on derived databases</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="option-d-self-hosted-open-3d-city-data-lod2-citygml-dop20">Option D — Self-hosted open 3D city data (LoD2 / CityGML + DOP20)</h3>
+<p>The strongest option for <strong>German public-sector</strong> work — and the one <strong>Campus-Scheduler and
+Campus-Insights already ship</strong> (see §5a). <strong>Fully free and licence-clean.</strong> It does <em>not</em> need
+Option E: German state orthophotos are better imagery than any commercial satellite layer.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Free and officially open</strong> — German state surveying offices publish LoD2 + DOP20 + DGM1 nationwide</td>
+<td>Not photogrammetry — flat-faced buildings, no cranes/awnings/trees-on-facades</td>
+</tr>
+<tr>
+<td><strong>20 cm orthophotos</strong> — sharper ground than Google's or Azure's satellite layers</td>
+<td>You run the tiling pipeline and host the output</td>
+</tr>
+<tr>
+<td>No usage limits, no per-tile billing, no token, no vendor account at all</td>
+<td>Germany/EU only; no global coverage</td>
+</tr>
+<tr>
+<td>Baked to static files → served from <strong>OneLake / Azure Blob</strong>, stays in our stack</td>
+<td>Upfront effort per city/region (~a day per AOI once the pipeline exists)</td>
+</tr>
+<tr>
+<td>Fully offline-capable → works in sovereign/air-gapped scenarios</td>
+<td>ODbL share-alike applies to any OSM-derived database you redistribute</td>
+</tr>
+<tr>
+<td>Data provenance a public-sector reviewer will accept without a procurement round</td>
+<td>Attribution strings are mandatory, per state</td>
+</tr>
+</tbody>
+</table></div>
+<p>Terrain to pair with it: <strong>Copernicus DEM GLO-30</strong> (free) for the surrounding shell, state <strong>DGM1</strong>
+(1 m) for the core.</p>
+<h3 id="option-e-azure-maps">Option E — Azure Maps</h3>
+<p>The Microsoft-native answer for <strong>global</strong> coverage. Note it is <strong>not free</strong> — it is a metered
+Azure service. For German AOIs, Option D beats it on quality <em>and</em> on cost.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Pros</th>
+<th>Cons</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>On the Azure bill</strong> — no third-party vendor, no GCP</td>
+<td><strong>Not free</strong> — metered per transaction (limited free allowance only)</td>
+</tr>
+<tr>
+<td>Enterprise terms, SLA, EU data boundary</td>
+<td><strong>No photorealistic 3D mesh</strong></td>
+</tr>
+<tr>
+<td>Already covered by an existing Azure agreement</td>
+<td>Satellite raster (Airbus) is coarser than German DOP20</td>
+</tr>
+<tr>
+<td>Global — the gap Option D cannot fill</td>
+<td>3D buildings must still come from elsewhere</td>
+</tr>
+<tr>
+<td>Cesium ion lists Azure Maps imagery as a source (tech preview)</td>
+<td>Tech-preview status where it's brokered via ion</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="5a-the-reference-implementation-already-exists-campus-scheduler">5a. The reference implementation already exists — Campus-Scheduler</h2>
+<p><strong>Campus-Scheduler / Campus-Insights are pure Option D, and they do not use Cesium at all.</strong>
+Verified in the repo, not assumed:</p>
+<pre><code class="language-json">&quot;dependencies&quot;: { &quot;three&quot;: &quot;^0.170.0&quot;, &quot;react&quot;: &quot;^19.0.0&quot;, ...rayfin }
+</code></pre>
+<p>No <code>cesium</code>, no <code>azure-maps</code>, no <code>mapbox-gl</code>, no <code>maplibre</code>. A workspace-wide grep for
+<code>cesium|azure.?maps|mapbox|maplibre|googleapis|tile.openstreetmap</code> across <code>src/</code> returns
+<strong>zero hits</strong>. The globe is hand-built on <strong>Three.js</strong> with a custom terrain shader.</p>
+<p><strong>Everything is baked at build time</strong> by <code>tools/geodata/pipeline.py</code> into <code>public/terrain/&lt;aoi&gt;/</code>,
+so the deployed app makes <strong>no third-party map request at runtime at all</strong> — no token, no tile
+server, no quota, no attribution beacon. That is a stronger position than either Cesium option.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Source</th>
+<th>Licence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Terrain (core, 1–2 m)</td>
+<td>State <strong>DGM1</strong> — LDBV / LGL / NRW / Hamburg</td>
+<td>CC BY 4.0 · dl-de/by-2-0</td>
+</tr>
+<tr>
+<td>Terrain (shell, 30 m)</td>
+<td><strong>Copernicus DEM GLO-30</strong></td>
+<td>Copernicus free licence</td>
+</tr>
+<tr>
+<td>Ground imagery</td>
+<td>State <strong>DOP20</strong> orthophotos, <strong>0.2 m/px</strong></td>
+<td>CC BY 4.0 · dl-de/by-2-0</td>
+</tr>
+<tr>
+<td>Buildings</td>
+<td>State <strong>LoD2 CityGML</strong></td>
+<td>CC BY 4.0 · dl-de/by-2-0</td>
+</tr>
+<tr>
+<td>Roof colour</td>
+<td><strong>Measured</strong> from the DOP20 drape (98–99.9 % coverage)</td>
+<td>derived</td>
+</tr>
+<tr>
+<td>Vegetation</td>
+<td>Tree cadastre (Bavaria) or <strong>nDOM</strong> canopy detection (BW)</td>
+<td>state licences</td>
+</tr>
+<tr>
+<td>Landuse, footpaths, indoor rooms</td>
+<td><strong>OpenStreetMap</strong> via Overpass, <strong>bulk-downloaded once</strong></td>
+<td>ODbL 1.0</td>
+</tr>
+</tbody>
+</table></div>
+<p>Eight campus AOIs were built this way, across four German states. Attribution is discharged in a
+<code>NOTICE.md</code> in the app repo, which also flags the one genuine open item — a <strong>campus room-data
+source whose redistribution terms</strong> block <em>public</em> release but not internal demos.</p>
+<p><strong>Why the OSM usage-policy objection does not apply here:</strong> the pipeline pulls OSM <strong>once, at
+build time</strong>, into committed derived files. That is bulk download of ODbL data — a different
+activity from pointing every visitor's browser at <code>tile.openstreetmap.org</code>. The keyless Harbour
+Pulse path does the latter, which is exactly why it hit a <strong>504</strong> the first time it was demoed.</p>
+<p><strong>How good does it actually look without any photogrammetry?</strong> Good enough that buildings are the
+subject at close range: measured per-roof colour, ALKIS-classified walls, true-scale heights, 20 cm
+ground. It is not Google's mesh — no textured façades, no street furniture — but it does not read
+as "the free version". It reads as a survey.</p>
+<hr />
+<h2 id="5b-would-a-cesium-ion-token-improve-the-campus-solution">5b. Would a Cesium ion token improve the campus solution?</h2>
+<p><strong>Short answer: no — for the German AOIs it is a net regression, and the token on its own does
+literally nothing.</strong> Three layers to this.</p>
+<h3 id="the-token-alone-is-inert">The token alone is inert</h3>
+<p>Campus-Scheduler has <strong>no Cesium runtime</strong>. A token is a credential for a library that is not
+installed. To use one you would first add a 3D Tiles renderer — realistically
+<a href="https://github.com/NASA-AMMOS/3DTilesRendererJS"><code>3d-tiles-renderer</code></a> (JPL/Caltech, <strong>Apache-2.0</strong>,
+2.4k stars), which renders 3D Tiles in Three.js and ships examples for <strong>both</strong> Cesium ion tilesets
+and Google Photorealistic tiles. Its own footnote: <em>"Requires a Google Tiles API Key </em><em>or</em><em> Cesium
+Ion API Key."</em></p>
+<p>So this is an integration project, not a config flag — and note the corollary: <strong>if you did it, you
+would not need ion at all.</strong> A Google Maps key reaches the same tiles.</p>
+<h3 id="what-it-would-genuinely-gain">What it would genuinely gain</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Gain</th>
+<th>Worth it?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Textured façades</strong></td>
+<td>Real. Walls are currently the app's one honest weakness — the <em>class</em> is measured, the colour is convention.</td>
+</tr>
+<tr>
+<td>Street furniture, cars, captured trees</td>
+<td>Cosmetic.</td>
+</tr>
+<tr>
+<td><strong>Global coverage</strong></td>
+<td><strong>The only real capability gain.</strong> A campus in Madrid, Warsaw or Boston has no DOP20/LoD2 equivalent.</td>
+</tr>
+<tr>
+<td>Cesium World Terrain</td>
+<td><strong>Negative.</strong> It is ~30 m; the campus already has <strong>DGM1 at 1 m</strong>. Strictly worse.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="what-it-would-break-this-is-what-decides-it">What it would break — this is what decides it</h3>
+<p>The campus app's value is not the scenery, it is <strong>per-building interactivity</strong>. Google's mesh is
+one undifferentiated photogrammetry blob with <strong>no building entities and no IDs</strong>.</p>
+<ul>
+<li><strong>The explode dies.</strong> You cannot select, isolate or explode a building that does not exist as an
+  object. The signature feature of the app is gone.</li>
+<li><strong>Every lens dies.</strong> Occupancy tint, condition grade (<code>aGrade</code> / <code>aRenovation</code>), flow — all are
+  per-building <em>vertex attributes</em> on the LoD2 mesh. Google's mesh carries none of them.</li>
+<li><strong>The true-scale claim needs re-earning.</strong> "No vertical exaggeration", validated at median
+  <strong>+0.00 m</strong> against the survey's own <code>measuredHeight</code>. Photogrammetry has a different error
+  budget, and the claim is one of the project's honesty commitments.</li>
+<li><strong>Offline / sovereign capability dies.</strong> Air-gapped deployments become impossible.</li>
+<li><strong>The performance budget stops being closed.</strong> Today: smallest AOI &lt; 14 MB, largest &lt; 34 MB
+  transferred, texture 67.5 / 77.8 MB, first frame 1.2–2.0 s — all <em>measured ceilings</em>. Streaming
+  tiles makes consumption open-ended and network-dependent.</li>
+<li><strong>Licensing goes backwards, and precisely for this audience.</strong> Cesium's free tier excludes
+  <strong>government projects</strong> and <strong>funded educational research</strong>. A German public university is both.
+  The campus demo's audience is exactly the audience the Community tier does not cover — so it
+  would mean ion Commercial <em>plus</em> the "outside your organization" conversation, replacing a stack
+  that is currently CC BY 4.0 / dl-de/by-2-0 / ODbL and publishable as-is.</li>
+</ul>
+<h3 id="the-one-variant-that-could-be-defensible">The one variant that could be defensible</h3>
+<p><strong>Hybrid:</strong> keep LoD2 for the campus core (where all the interactivity lives) and use photoreal
+tiles only for the <strong>surrounding context shell</strong>, which today is deliberately coarse 30 m Copernicus.
+This requires clipping the photoreal mesh where the campus sits, or you get two overlapping cities —
+Cesium has <code>ClippingPolygon</code> for this natively, Three.js would need it hand-rolled.</p>
+<p>Cost/benefit: real engineering, a reintroduced runtime key dependency, and a licence bill — to
+improve scenery that was made low-detail on purpose <em>because it is not the subject</em>.</p>
+<h3 id="verdict">Verdict</h3>
+<p>Not worth it for the German AOIs. Worth prototyping only if <strong>"any campus in the world, next week"</strong>
+becomes a requirement — and even then, understand that it produces a <em>different product</em>: a
+photoreal viewer, not a twin, because the lenses cannot follow into a mesh with no buildings in it.</p>
+<p>⚠️ Before any such prototype, <strong>check Google photoreal coverage per AOI</strong>. Coverage and capture
+quality vary, and a science campus on a city's edge is not a city centre.</p>
+<hr />
+<h2 id="6-cost-concretely">6. Cost, concretely</h2>
+<p>Assume a demo session pulls ~2,000 3D tiles (conservative for a few minutes of flying).</p>
+<div class="table-scroll"><table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Option A (ion Commercial)</th>
+<th>Option B (direct Google)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1 demo/month</td>
+<td>$149</td>
+<td>~$6 (first 1,000 free)</td>
+</tr>
+<tr>
+<td>20 demos/month</td>
+<td>$149</td>
+<td>~$234</td>
+</tr>
+<tr>
+<td>100 demos/month</td>
+<td>$149 (quota permitting)</td>
+<td>~$1,194</td>
+</tr>
+<tr>
+<td>Left running overnight in a tab</td>
+<td>$149</td>
+<td><strong>unbounded</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The flat fee wins the moment you demo more than about ten times a month, and it removes the
+tail risk entirely. <strong>That is the real argument for ion over direct Google</strong> — not the features.</p>
+<hr />
+<h2 id="7-recommendation">7. Recommendation</h2>
+<p><strong>For internal demos and prototypes:</strong> keep the ion Community token.
+It sits inside the "exploratory commercial development" carve-out. Two hygiene fixes:</p>
+<ol>
+<li><strong>Restrict the token</strong> in the ion dashboard to the specific asset IDs and your app's hosting
+   domain. Right now anyone reading the bundle can spend your quota.</li>
+<li>Add a one-line note in each demo README saying the token is evaluation-scope only, so nobody
+   copies it into something that ships.</li>
+</ol>
+<p><strong>The moment anything ships for real</strong> — someone else's tenant, real users, a public URL — pick one:</p>
+<ul>
+<li><strong>Photorealism is the point</strong> (harbour, airport, campus fly-throughs, the executive wow):
+  buy <strong>ion Commercial ($149/mo)</strong> and talk to Cesium about the "outside your organization"
+  clause. Do <strong>not</strong> quietly switch to a direct Google key to dodge the fee — you'd move a
+  $149 flat cost onto an uncapped meter <em>and</em> introduce a third-party cloud bill into a project
+  that didn't have one.</li>
+<li><strong>Photorealism is nice-to-have</strong> (most operational dashboards, and essentially every German
+  public-sector conversation): go <strong>Option D</strong> — LoD2 buildings + DOP20 orthophotos from the state
+  surveying office + Copernicus terrain, baked to static files in OneLake/Azure. Free, officially
+  licensed for commercial use, no runtime dependency on anyone. <strong>This is already built</strong> — reuse
+  the existing <code>tools/geodata/</code> pipeline rather than starting again. Add <strong>Option E (Azure Maps)</strong>
+  only when you need coverage outside Germany; it is not free and it is not needed inside Germany.</li>
+</ul>
+<blockquote>
+<p>⚠️ <strong>"Just use OpenStreetMap instead" does not work as a substitute for imagery.</strong> OSM is a
+<em>vector map database</em> — it contains no aerial photography at all. Swapping a satellite layer for
+OSM raster tiles gives you a road map with labels, not a photographed ground, and the app stops
+looking like a twin. The free-and-valid imagery answer in Germany is <strong>DOP20</strong>, not OSM.</p>
+</blockquote>
+<p><strong>Architecturally, copy Harbour Pulse's pattern regardless.</strong> The single-flag fork is the reusable
+idea: one env var, photoreal when it's there, honest degradation when it isn't. It means the
+same codebase can serve an internal wow-demo and a licence-clean production deployment with no
+code change — and it means a missing or revoked token never produces a blank screen.</p>
+<hr />
+<h2 id="8-open-questions-to-confirm-before-committing-to-a-stack">8. Open questions to confirm before committing to a stack</h2>
+<ul>
+<li>Whether an existing enterprise agreement <strong>already covers Google Maps Platform</strong> anywhere, if
+  Option B is ever seriously considered (assume not).</li>
+<li>Exact wording Cesium applies to <strong>"solutions used outside your organization"</strong> for an app
+  running in someone else's Fabric tenant — this needs Cesium sales, not the website.</li>
+<li>Whether <strong>Azure Maps satellite imagery</strong> may be re-projected onto a Cesium globe under the
+  Azure Maps terms (raster tiles into a third-party renderer is not obviously in scope).</li>
+<li>Whether Bentley ownership changes ion's licensing or pricing — worth re-checking annually.</li>
+</ul>
+<hr />
+<h2 id="references">References</h2>
+<ul>
+<li>Cesium ion pricing &amp; FAQ — https://cesium.com/platform/cesium-ion/pricing/</li>
+<li>Cesium company history — https://cesium.com/about/ · https://cesium.com/press/</li>
+<li>CesiumJS licence (Apache-2.0) — https://github.com/CesiumGS/cesium/blob/main/LICENSE.md</li>
+<li>Bentley acquisition of Cesium GS (Sept 2024) — https://en.wikipedia.org/wiki/Bentley_Systems</li>
+<li>Google Maps Platform price list — https://developers.google.com/maps/billing-and-pricing/pricing</li>
+<li>Google SKU billable events — https://developers.google.com/maps/billing-and-pricing/sku-details</li>
+<li>Photorealistic 3D Tiles overview — https://developers.google.com/maps/documentation/tile/3d-tiles-overview</li>
+<li>OSMF Tile Usage Policy — https://operations.osmfoundation.org/policies/tiles/</li>
+</ul>
+    </article>
+    <p style="margin-top:3rem"><a class="btn btn-outline"
+       href="https://github.com/KornAlexander/Fabric-App-Learnings/blob/main/playbooks/photoreal-3d-maps.md">Read the markdown source on GitHub</a></p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <p><strong>Personal field notes.</strong> Written for myself while building things, shared in case
+       they save someone else the same days.</p>
+    <p>Not affiliated with, endorsed by, or representing Microsoft. Nothing here is official guidance,
+       and nothing here is tested beyond my own use.</p>
+    <p>Markdown sources and issues: <a href="https://github.com/KornAlexander/Fabric-App-Learnings">https://github.com/KornAlexander/Fabric-App-Learnings</a> · MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>

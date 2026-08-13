@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Realistic 3D terrain in the browser · Fabric App Learnings</title>
+<meta name="description" content="What actually buys realism, how to prove the map is in the right place, and the bugs only a rendered pixel reveals." />
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap">
+    <a class="logo" href="index.html">Fabric App <span>Learnings</span></a>
+    <div class="links">
+        <a href="index.html">Home</a>
+        <a href="drone-camera.html">Drone camera</a>
+        <a href="3d-terrain.html" class="active">3D terrain</a>
+        <a href="limitations.html">Limitations</a>
+        <a href="photoreal-maps.html">Photoreal maps</a>
+        <a href="choosing.html">Choosing a front end</a>
+        <a href="calculator/index.html">Calculator</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero compact">
+  <div class="wrap">
+    <h1>Realistic 3D terrain in the browser</h1>
+    <p class="sub">What actually buys realism, how to prove the map is in the right place, and the bugs only a rendered pixel reveals.</p>
+    
+  </div>
+</header>
+
+<section>
+  <div class="wrap reading">
+    <div class="toc"><strong>On this page</strong>
+    <ul>
+      <li><a href="#what-actually-buys-realism-in-order-of-effect">What actually buys realism, in order of effect</a></li>
+      <li><a href="#data-acquisition-german-states-the-pattern-generalises">Data acquisition (German states; the pattern generalises)</a></li>
+      <li><a href="#registration-how-to-prove-the-map-is-correctly-placed">Registration — how to prove the map is correctly placed</a></li>
+      <li><a href="#terrain">Terrain</a></li>
+      <li><a href="#vertical-exaggeration-default-to-1">Vertical exaggeration — default to 1</a></li>
+      <li><a href="#buildings-lod2">Buildings (LoD2)</a></li>
+      <li><a href="#vegetation-real-trees-from-dom-dgm">Vegetation (real trees from DOM − DGM)</a></li>
+      <li><a href="#land-cover-roads-class-raster">Land cover + roads (class raster)</a></li>
+      <li><a href="#rendering-gotchas">Rendering gotchas</a></li>
+      <li><a href="#camera">Camera</a></li>
+      <li><a href="#payload-and-loading">Payload and loading</a></li>
+      <li><a href="#verifying-rendered-output-this-is-where-the-bugs-are">Verifying rendered output — this is where the bugs are</a></li>
+      <li><a href="#playwright-heavy-webgl">Playwright + heavy WebGL</a></li>
+    </ul>
+  </div>
+    <article>
+<blockquote>
+<p>Working notes, distilled from building a 13 km flood twin (three.js + WebGL2, ~47 MB payload,
+16.7 ms frame on an integrated Adreno X1-85). Area-agnostic. Written for myself, shared as-is —
+the 🔴 items are the ones that cost me a day or more.</p>
+</blockquote>
+<h2 id="what-actually-buys-realism-in-order-of-effect">What actually buys realism, in order of effect</h2>
+<ol>
+<li><strong>Hillshade.</strong> Without it terrain is an unreadable pale mass. Central differences on the heightmap
+   in the vertex shader, low NW sun (cartographic convention). Biggest single win.</li>
+<li><strong>Land cover colour.</strong> Bare elevation shading reads as bare stone. Tint by class, don't replace —
+   relief must stay readable through it.</li>
+<li><strong>Buildings</strong> (real cadastre), then <strong>trees</strong>, then road network. Villages need a base tone clearly
+   darker than terrain or they read as texture, not fabric.</li>
+<li><strong>True scale.</strong> Exaggeration is the fastest way to look fake. See below.</li>
+</ol>
+<h2 id="data-acquisition-german-states-the-pattern-generalises">Data acquisition (German states; the pattern generalises)</h2>
+<ul>
+<li><strong>Terrain DGM1 / surface DOM1 / LoD2 CityGML / DOP20 orthophotos</strong> — state survey offices, open data,
+  <code>dl-de/by-2-0</code>. RLP: <code>geobasis-rlp.de</code>; NRW: <code>opengeodata.nrw.de</code>. CRS <strong>EPSG:25832 (UTM32)</strong>.</li>
+<li><strong>Metalink catalogue pattern</strong> (RLP, likely others): product JSON → <code>.meta4</code> catalogue (size + SHA-256
+  per tile) → tile URLs. DGM/DOM tiles <strong>1 km</strong>, LoD2 tiles <strong>2 km</strong> — a radius sized for 1 km silently
+  misses neighbours (I got 41 buildings instead of 307).</li>
+<li><strong>OSM via Overpass</strong> for land cover, roads, buildings, place nodes, watercourses. Use <strong>≥3 mirrors +
+  retries with backoff</strong> (overpass-api.de, kumi.systems, private.coffee, osm.ch) — a full pipeline run
+  earns 504s. Counts differ slightly between runs/mirrors; not a bug.</li>
+<li>⚠️ <strong><code>out geom</code> returns the WHOLE geometry of any way intersecting the bbox</strong> → clip to the AOI yourself.</li>
+<li>German geoportals move URLs constantly: start at the authority root, don't deep-link products.</li>
+<li>⚠️ <strong>Check the acquisition year.</strong> Open DGM is usually "current" only; for a past event you are
+  rendering post-event terrain. State it in the UI, never silently correct.</li>
+<li><strong>No GDAL / pyproj / rasterio needed</strong>: numpy + pillow + scipy + stdlib (<code>urllib</code>, <code>struct</code>, <code>xml</code>) is
+  enough. PIL reads float32 GeoTIFF; shapefiles parse with <code>struct</code>; write your own Transverse Mercator.</li>
+</ul>
+<h2 id="registration-how-to-prove-the-map-is-correctly-placed">Registration — how to prove the map is correctly placed</h2>
+<ul>
+<li>🔴 <strong>The best check is a river bed profile</strong>, not village coordinates. OSM georeferences the centreline
+  independently of the DGM, and the bed is the valley's lowest point, so any mis-registration pushes the
+  sampled profile up the sides. Mine fell <strong>173.5 → 88.5 m over 24.6 km, strictly monotonic</strong>, and matched
+  the official gauge datum to <strong>0.7 m</strong> — that confirms horizontal <em>and</em> vertical registration at once.</li>
+<li><strong>Corroborate land-cover rasters with facts that fall OUT of the data</strong>: vineyard area vs the published
+  wine-region area; vineyard = steepest class; railway = lowest class. A flip or offset breaks all three.</li>
+<li>⚠️ <strong>Never verify with recalled coordinates.</strong> In a gorge, 200 m horizontal error ⇒ ~150 m vertical
+  error; my "errors up to 166 m" were my own bad lat/lons. Use OSM place nodes, and cross-check against
+  per-village building ground medians.</li>
+</ul>
+<h2 id="terrain">Terrain</h2>
+<ul>
+<li>Heightmap <strong>uint16, 4 m posting</strong> (<code>h = min + raw*scale</code>), plus a <strong>nodata mask</strong>.</li>
+<li>🔴 <strong>Rasters are row 0 = NORTH; <code>PlaneGeometry</code> uv v=0 lands SOUTH after <code>rotateX(-PI/2)</code></strong> → sample
+  with <code>vec2(u, 1.0 - v)</code> or the whole map is mirrored. <em>(A mirror is quiet: an E–W valley reflected about
+  the middle of its own box leaves the valley in the middle and the towns near the towns.)</em></li>
+<li>🔴 <strong>Fill nodata nearest-neighbour, never with a constant or the minimum.</strong> Constant = cliff wall at the
+  state border; minimum = permanent lake. Carry the mask so filled cells can never be "wet".</li>
+<li>Render mesh: decimate the grid (4× → 16 m posting, ~470 k verts). One vertex per heightmap cell
+  is 7.5 M — far too many, and invisible at normal camera range.</li>
+<li><strong>Exposure: keep <code>ambient + gain*lambert &lt;= 1.0</code>.</strong> <code>0.62 + 0.52*lambert</code> peaks at 1.14 and clips
+  sunlit slopes to pure white ("plaster" look). <code>0.58 + 0.42*lambert</code> is safe.</li>
+</ul>
+<h2 id="vertical-exaggeration-default-to-1">Vertical exaggeration — default to 1</h2>
+<ul>
+<li>🔴 <strong>True scale by default.</strong> Any factor &gt; 1 is a claim the survey does not make. Offer it as a toggle.
+  History here: 2.5 → 1.5 → 1. The 2.5 was sized on a <em>wrong</em> comment about the relief.</li>
+<li><strong>Check the real relief before choosing a factor.</strong> 429 m of relief over 13 km at 2.5× renders &gt;1 km of
+  apparent relief = alpine. Print the actual range in the UI ("88–517 m ü. NHN").</li>
+<li>Exaggeration must be <strong>render-only</strong>: apply it to <code>displaced.y</code> and the shading normal, keep <code>vTerrainZ</code>
+  in real metres so any physics (<code>depth = wse - z</code>) never sees it. <code>grep exagger tools/**</code> should be empty.</li>
+<li>⚠️ <strong>Do NOT scale building/tree height by it</strong> — it turns houses into towers. Pass per-vertex or
+  per-instance <code>aGround</code> and do <code>y = ground*exag + (y - ground)*1.35</code>. Mixed scales also make buildings
+  look too small against hills, which compounds a "mountains too high" impression.</li>
+<li>🔴 <strong>If exaggeration is switchable, rebuild instanced bounding spheres</strong> (<code>center.y = mid*f</code>,
+  <code>radius = base + halfSpread*f</code>) or whole hillsides blink out at the frustum edge.</li>
+<li>Scale the <strong>camera position and controls target by the ratio</strong> too, else the view lurches.</li>
+</ul>
+<h2 id="buildings-lod2">Buildings (LoD2)</h2>
+<ul>
+<li>🔴 <strong>Quantise the mesh, planar</strong>: int16 x/z @0.25 m + uint16 y @0.01 m above an offset, written as three
+  blocks so the browser wraps each with no copy. <strong>60 MB → 26 MB.</strong> Keep a float32 fallback path keyed on
+  a <code>quantisation</code> block in the metadata.</li>
+<li>Clip to the terrain extent (a 2 km tile band reaches past the AOI and those buildings have no ground
+  under them) and drop tiny footprints (<code>--min-footprint 20 m²</code> removed 2 677 sheds).</li>
+<li>Per-building dynamic colour: a 1-D <code>DataTexture</code> keyed by building index + an <code>aBuilding</code> vertex
+  attribute. Recolours 12 k buildings per frame with zero geometry work.</li>
+<li>🔴 <strong>Any per-item <code>DataTexture</code> must wrap into rows once items can exceed 16 384.</strong> A <code>30207 × 1</code> strip
+  exceeded <code>MAX_TEXTURE_SIZE</code> on an integrated GPU, the upload failed <strong>silently</strong> (<code>GL_INVALID_VALUE</code>,
+  nothing thrown), every sample returned 0, and every building rendered the ramp's "dry" colour. Use a
+  fixed width (2048 = the WebGL2 guaranteed minimum) and unwrap with <code>mod</code>/<code>floor</code> in the shader.</li>
+<li>Move footprint rings to an <strong>offline-only</strong> JSON; the app doesn't need them (6.2 → 1.04 MB).</li>
+</ul>
+<h2 id="vegetation-real-trees-from-dom-dgm">Vegetation (real trees from DOM − DGM)</h2>
+<ul>
+<li><strong>nDOM = DOM1 − DGM1</strong>, keep 3–48 m, tree tops = local maxima (<code>maximum_filter</code>, size = spacing).
+  Remove buildings twice: OSM footprint discs (<code>r = sqrt(area/π)*1.6</code>) <strong>and</strong> roughness (local σ over 5 m
+  ≥ 0.55 m — a roof is a plane, a crown is rough).</li>
+<li><code>--spacing 10 m</code> ⇒ ~390 k trees at <strong>9 bytes each</strong> (<code>&lt;hhHBBB</code>: int16 x, int16 z, uint16 ground dm,
+  uint8 height 0.2 m, uint8 crown radius dm, uint8 shape). Spacing 7 ⇒ ~700 k, too many.</li>
+<li>🔴 <strong>The performance answer is CHUNKING, not geometry.</strong> One <code>InstancedMesh</code> per ~1 km cell with its own
+  bounding sphere ⇒ frustum culls most of the wood. 274 chunks, 16.7 ms. A single mesh submits everything
+  every frame. At 390 k trees triangle count was <strong>never</strong> the bottleneck — 12-tri and 30-tri crowns
+  measured identical. Don't optimise geometry without measuring.</li>
+<li><strong>Two crown forms beat one.</strong> Conifer 24 tri (3 tiers) + broadleaf 30 tri (rounded), both on a 3-sided
+  trunk, from one <code>lathe(profile, sides)</code> helper. <strong>Random Y rotation per tree</strong> (stable hash) is free and
+  kills the "stamped wood" look. Bucket chunks by <code>species:chunkX:chunkZ</code>.</li>
+<li>🔴 <strong>Derive the form from the data, don't assign it.</strong> Sample nDOM on rings 1–8 m around each apex;
+  crown radius = where canopy falls to 45 % of apex; taper = canopy at 0.18×height. Taper &lt; 0.62 ⇒ conical.
+  <strong>Validate the classifier</strong>: neighbours of a conifer were 47.1 % conifer vs a 20.5 % base rate, and a
+  <strong>shuffled-label control gave 20.5/20.5</strong> ⇒ the clustering is real (planted stands). Call it crown
+  <strong>form</strong>, not species. OSM <code>leaf_type</code> is useless here (117/183 polygons untagged, zero needleleaved).</li>
+</ul>
+<h2 id="land-cover-roads-class-raster">Land cover + roads (class raster)</h2>
+<ul>
+<li>Rasterise OSM polygons with <strong>PIL <code>ImageDraw.polygon</code></strong> (no GDAL). <strong>Paint largest area first</strong> so small
+  polygons survive; relation inner rings painted back to class 0. Roads last, ascending importance.</li>
+<li>The grid must mirror the heightmap extent exactly so a uv means the same place in both.</li>
+<li>🔴 <strong>Line width is where "pixly" comes from</strong>: <code>width = round(width_m / resolution)</code>. At 8 m <em>every</em> road
+  rounds to 1 cell, so a 4 m service road and a 13 m primary are both drawn 8 m wide. <strong>Use 2 m.</strong></li>
+<li>🔴 <strong>Class rasters gzip ~27:1</strong> (28.6 MB grid → <strong>1.06 MB</strong> on the wire — <em>less</em> than an 8 m raster raw).
+  Inflate cost 121 ms. <strong>Finer map = smaller download.</strong> This is what makes 2 m affordable.</li>
+<li>⚠️ <strong>Never name a pre-compressed asset <code>.gz</code>.</strong> Vite sets <code>Content-Encoding: gzip</code> on it (the browser
+  inflates transparently, then your own inflate throws); other static hosts set nothing and hand over raw
+  bytes. Same file, opposite behaviour. Use a neutral extension (<code>.u8z</code>) and <strong>detect by content: <code>1f 8b</code>
+  magic</strong>. Check the inflated length against <code>width*height</code> before uploading to the GPU.</li>
+<li>Put the raster <strong>filename and resolution in a fixed-name descriptor JSON</strong>, so a resolution change needs
+  no app change. Have the builder delete superseded rasters (the old grid keeps shipping otherwise).</li>
+<li>🔴 <strong>Invisible line features are usually a COLOUR problem, not resolution.</strong> I blamed jitter first and
+  <strong>measured myself wrong</strong> — 89.1 % of road fragments still sampled a road. The real cause: one grey for
+  all roads, and unpaved track (<code>0.66,0.63,0.57</code>) sat on farmland (<code>0.76,0.72,0.57</code>). Fix = split
+  paved/unpaved from the OSM <code>surface</code> tag (58 % coverage; fall back to class habit). Asphalt is darker
+  than any ground, gravel paler than any — one shared grey guarantees one of them vanishes.</li>
+<li><strong>Hash-jitter the class lookup by ±½ cell</strong> so field edges are ragged instead of staircased — but
+  <strong>exempt line classes in both directions</strong> (a road sample wins; a jittered sample landing on a road falls
+  back), else it eats the line or smears it onto roadless ground.</li>
+<li>Keep the palette muted and <strong>reserve saturation/darkness for the thing that matters</strong>.</li>
+<li>⚠️ Don't invent sub-cell detail (vineyard row stripes at real 1.8 m spacing would alias, and an invented
+  spacing is unearned detail).</li>
+</ul>
+<h2 id="rendering-gotchas">Rendering gotchas</h2>
+<ul>
+<li>🔴 <strong>A custom-shader scene has NO lights.</strong> Terrain/buildings/trees each bake their own shading, so a
+  <code>MeshLambertMaterial</code> renders <strong>black</strong>. Repeat the same sun vector in every material.</li>
+<li><code>instanceMatrix</code>/<code>instanceColor</code> are auto-declared by three for <code>ShaderMaterial</code> (not <code>RawShaderMaterial</code>)
+  on an <code>InstancedMesh</code>.</li>
+<li>A <code>usampler2D</code> uniform <strong>must still be bound</strong> when the raster is absent, or it reads texture unit 0.</li>
+<li><code>OrbitControls</code>: damping 0.08, rotateSpeed 0.55, zoomSpeed 0.7, <code>maxPolarAngle = PI*0.48</code> (stops the
+  camera dropping under the terrain). <code>frame()</code> must set <strong><code>controls.target</code> too</strong> or the next drag snaps.</li>
+<li>🔴 <strong>The plane is flat until the vertex shader displaces it</strong>, so three.js culls the ground as soon as the
+  camera drops below the ridge → <code>terrain.frustumCulled = false</code>.</li>
+</ul>
+<h2 id="camera">Camera</h2>
+<ul>
+<li><strong>One mesh, many places.</strong> Place buttons should only move the camera. But an instant cut across
+  continuous terrain is <strong>indistinguishable from loading a different map</strong> (a user reported exactly that).
+  Ease over ~1500 ms with a half-sine lift (<code>min(distance*0.25, 2600 m)</code>); the apex shows the continuity.
+  Honour <code>prefers-reduced-motion</code>, skip moves &lt; 50 m, cancel on the controls <code>start</code> event.</li>
+</ul>
+<h2 id="payload-and-loading">Payload and loading</h2>
+<ul>
+<li>~47 MB before anything renders ⇒ <strong>you need a real progress indicator</strong>, and the dead-looking UI around
+  it matters as much: hide the control panel until ready, or the page reads as broken rather than busy.</li>
+<li>⚠️ <strong>Never size a progress bar from <code>Content-Length</code>.</strong> Many static hosts answer
+  <code>Transfer-Encoding: chunked</code> with no length — header-driven bars work on the dev server and are
+  permanently indeterminate in production. Behind gzip the header is the compressed length anyway.</li>
+<li>✅ <strong>Derive expected bytes from metadata you already fetched</strong> — raster <code>w*h*bytesPerCell</code>, mesh
+  <code>vertices*6</code>, trees <code>count*stride</code>. Verified byte-exact on all six binaries. No manifest to go stale.</li>
+<li><strong>Declare every expected size BEFORE fetching any payload.</strong> Reading one descriptor lazily grew the
+  stage total mid-flight and the bar ran <strong>backwards 97 % → 90 %</strong>.</li>
+<li>Throttle progress emits to ~100 ms (a 26 MB body arrives in hundreds of chunks).</li>
+</ul>
+<h2 id="verifying-rendered-output-this-is-where-the-bugs-are">Verifying rendered output — this is where the bugs are</h2>
+<ul>
+<li>🔴 <strong>Colour-classifying pixel tests are a trap.</strong> "Count turbid-brown pixels" broke twice — first when
+  trees were added (sunlit canopy also has r &gt; b), then again when vineyard ochre arrived. <strong>Capture a
+  dry/base frame and measure the DIFFERENCE</strong>: palette-immune, and it traced the hydrograph properly.</li>
+<li>⚡ <strong>Keep frame comparisons inside the browser</strong> (<code>window.__frames</code> slots, return one number). Returning a
+  1280×800 frame is 3 M numbers over CDP; fixing that took one spec from <strong>2.0 min → 40 s</strong>.</li>
+<li>The renderer needs <strong><code>preserveDrawingBuffer: true</code></strong> or <code>readPixels</code> always returns zeroes.</li>
+<li><strong>Screenshot diffing cannot verify camera motion</strong> if anything animates per frame (e.g. water <code>uTime</code>).
+  Hash a clip of static hillside instead.</li>
+<li>Verify overlays don't cover panels by <strong>measuring <code>getBoundingClientRect</code> intersections</strong>, and make the
+  check <strong>throw if a panel testid is missing</strong> — mine silently matched nothing and passed vacuously.</li>
+</ul>
+<blockquote>
+<p>🔴 <strong>The lesson that outranks all the fixes:</strong> <code>tsc</code> + 54 unit tests + 57 e2e + eslint were ALL GREEN
+while the app rendered an entire valley wrong. Anything that only fails as a <em>fetched filename</em> or a
+<em>rendered pixel</em> survives the whole verify chain. After every deploy, actually open the thing and look.</p>
+</blockquote>
+<h2 id="playwright-heavy-webgl">Playwright + heavy WebGL</h2>
+<ul>
+<li>🔴 <strong>Root cause of every "WebGL spec is flaky/slow": headless Chromium rasterises with SwiftShader on the
+  CPU.</strong> Measured: median frame <strong>884 ms</strong>, and a trivial <code>page.evaluate</code> took 0.5–8.7 s because rendering
+  blocks the main thread. Fix in <code>launchOptions</code>:
+  <code>args: ['--use-angle=default','--enable-gpu','--ignore-gpu-blocklist']</code> + <code>ignoreDefaultArgs: ['--disable-gpu']</code>
+  → frame <strong>884 → 16 ms</strong>, suite <strong>11.6 min with 2 failures → 24 s green</strong>. Safe unconditionally (falls back
+  to SwiftShader when there is no GPU). Confirm via <code>WEBGL_debug_renderer_info</code> — "SwiftShader" = bad.
+  ⚠️ Do <strong>not</strong> reach for <code>workers: 1</code> / serial mode first; that treats the symptom.</li>
+<li>⚠️ <strong>Never assert animation progress after a FIXED wait.</strong> rAF-driven clocks only advance when frames
+  arrive, and parallel workers share one GPU. Use <code>expect.poll</code> with a 30–40 s budget.</li>
+<li>Every <code>page.mouse.move</code> forces a render → keep drags to ≤10 moves; coordinates must stay in the viewport.</li>
+<li><code>@types/three</code> is a required devDependency.</li>
+</ul>
+    </article>
+    <p style="margin-top:3rem"><a class="btn btn-outline"
+       href="https://github.com/KornAlexander/Fabric-App-Learnings/blob/main/playbooks/realistic-3d-terrain.md">Read the markdown source on GitHub</a></p>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="wrap">
+    <p><strong>Personal field notes.</strong> Written for myself while building things, shared in case
+       they save someone else the same days.</p>
+    <p>Not affiliated with, endorsed by, or representing Microsoft. Nothing here is official guidance,
+       and nothing here is tested beyond my own use.</p>
+    <p>Markdown sources and issues: <a href="https://github.com/KornAlexander/Fabric-App-Learnings">https://github.com/KornAlexander/Fabric-App-Learnings</a> · MIT licence.</p>
+  </div>
+</footer>
+
+</body>
+</html>
