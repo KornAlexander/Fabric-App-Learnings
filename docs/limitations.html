@@ -38,7 +38,7 @@
     <ul>
       <li><a href="#1-rayfin-functions-not-there-yet">1 · Rayfin functions — 🟡 not there yet</a></li>
       <li><a href="#2-the-public-url-by-design-so-design-around-it">2 · The public URL — 🟡 by design, so design around it</a></li>
-      <li><a href="#3-pricing-capacity-utilisation-real-and-quantifiable">3 · Pricing / capacity utilisation — 🟡 real, and quantifiable</a></li>
+      <li><a href="#3-capacity-sizing-worth-doing-once-properly">3 · Capacity sizing — 🟡 worth doing once, properly</a></li>
     </ul>
   </div>
     <article>
@@ -71,9 +71,9 @@ they'll find it in week two anyway — and you gain the right to be believed abo
 <td>"The shell is served publicly and the hostname is platform-owned. The data stays Entra-gated. If your <em>layout</em> itself is confidential, pick a different surface."</td>
 </tr>
 <tr>
-<td><strong>Pricing / utilisation</strong></td>
-<td>🟡 real, and quantifiable</td>
-<td>"The app barely uses CU. The thing to plan for is that it's always on — so the capacity behind it needs to be too."</td>
+<td><strong>Capacity sizing</strong></td>
+<td>🟡 worth doing once, properly</td>
+<td>"The app itself barely uses CU — a typical small one peaks at 0.35 CU and fits an F2. Size the capacity to the workload and it's very cheap."</td>
 </tr>
 </tbody>
 </table></div>
@@ -176,53 +176,30 @@ and <em>deleting it locally is not removing it</em>.</p>
 returns 200" proves nothing. Check the <code>&lt;title&gt;</code>. This is how I caught two stale demo URLs of my own
 the day before a talk.</p>
 <hr />
-<h2 id="3-pricing-capacity-utilisation-real-and-quantifiable">3 · Pricing / capacity utilisation — 🟡 real, and quantifiable</h2>
+<h2 id="3-capacity-sizing-worth-doing-once-properly">3 · Capacity sizing — 🟡 worth doing once, properly</h2>
 <h3 id="the-sharp-version">The sharp version</h3>
-<p>A Fabric App is <strong>remarkably cheap to run</strong>. The thing to plan for is that it's <strong>always on</strong>, and
-the capacity behind it has to be too.</p>
-<p>A paused capacity means the app doesn't answer: root serves <code>HTTP 500</code>, lazy chunks 500, UDF invokes
-500. <code>rayfin up</code> returns <code>404 The requested endpoint does not exist</code> before it ever surfaces
-<code>CapacityNotActive</code>. After a resume it serves 408s for another 20–30 s while the workload warms.
-All of that is consistent — it's simply what "the capacity is off" looks like from the browser.</p>
-<p><strong>So hosting an app turns a schedulable capacity into a 24/7 one. That's a sizing decision, and it's
-worth making deliberately rather than discovering it on the invoice.</strong></p>
-<h3 id="the-evidence-two-capacities-one-tenant-same-week">The evidence — two capacities, one tenant, same week</h3>
-<div class="table-scroll"><table>
-<thead>
-<tr>
-<th></th>
-<th>hosts Fabric Apps</th>
-<th>hosts none</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Uptime</td>
-<td><strong>91 %</strong></td>
-<td><strong>26 %</strong></td>
-</tr>
-<tr>
-<td>Cost that week</td>
-<td><strong>$714.53</strong> (74 % of all Azure spend)</td>
-<td>$196.33</td>
-</tr>
-</tbody>
-</table></div>
-<p>Same owner, same schedule, same Logic Apps. <strong>The app is the entire difference.</strong> The daily 18:00
-pause is undone within minutes, every day, because the app has to answer.</p>
+<p>A Fabric App is <strong>remarkably cheap to run</strong>. The front end itself consumes almost nothing — what
+shows up on the bill is the queries behind it, and those are the same queries a report would fire.
+The only thing worth doing deliberately is <strong>sizing the capacity to the workload</strong> rather than
+assuming an app needs a big one.</p>
 <h3 id="the-arithmetic">The arithmetic</h3>
-<pre><code>capacity-hours   = CU-seconds / (SKU CU × 3600)
-utilisation      = capacity-hours used / hours the capacity was Active
-unpausable hours = hours × (uptime_with_app − uptime_without_app)
-cost of the pause you can't take = unpausable hours × SKU CU × rate
+<pre><code>capacity-hours = CU-seconds / (SKU CU × 3600)
+utilisation    = capacity-hours used / hours the capacity was Active
+peak CU        = concurrent users × burst CU / smoothing window (300 s)
 </code></pre>
-<p>On a typical small app (200 users, Direct Lake, ~12 opening queries, 3 % concurrency): peak
-<strong>0.35 CU</strong> → fits an <strong>F2</strong>. Put that same app on an F32 and roughly <strong>$2,885/month</strong> of the bill is
-buying uptime you'd otherwise have paused, at an effective <strong>$3,635 per CU-hour actually used</strong>
-versus $0.19 list. The lesson isn't "apps are expensive" — it's <strong>size the capacity to the app, and
-the economics are excellent</strong>.</p>
-<p>✅ <strong>If the workload already runs a 24/7 capacity for other reasons</strong>, the marginal cost of the app is
-near zero — say so. That's the common case, and it's where this question disappears entirely.</p>
+<p>The number that decides your SKU is <strong>peak CU</strong>, not monthly total. Fabric smooths bursts over a
+300-second window, which is why a short spike from a handful of simultaneous users flattens into
+something very small.</p>
+<h3 id="what-that-looks-like-on-a-real-app">What that looks like on a real app</h3>
+<p>A typical small app — <strong>200 users</strong>, Direct Lake, ~12 queries on open, 3 % concurrency — peaks at
+<strong>0.35 CU</strong>. That fits an <strong>F2</strong>, the smallest SKU there is, with room to spare.</p>
+<p>That's the headline: an interactive, custom-built front end on analytics-scale data, inside the
+smallest capacity Fabric sells. Size it to the workload and the economics are excellent.</p>
+<p>✅ <strong>And if a capacity is already running for other reasons</strong> — which is usually the case, since
+reports, pipelines and models are sitting on it anyway — the marginal cost of adding an app is
+<strong>effectively nothing</strong>. That's the common case, and it's worth saying plainly.</p>
+<p>⚠️ Measure rather than trust an estimate: the <strong>Fabric Capacity Metrics</strong> app gives you the real
+CU-seconds for your own workload. Anything else, including my calculator, is a rough shape.</p>
     </article>
     <p style="margin-top:3rem"><a class="btn btn-outline"
        href="https://github.com/KornAlexander/Fabric-App-Learnings/blob/main/playbooks/fabric-app-limits.md">Read the markdown source on GitHub</a></p>

@@ -16,13 +16,14 @@ These are working notes I wrote to myself while building, not documentation writ
 |---|---|
 | [**The drone camera**](playbooks/drone-camera.md) | One `flyControls.ts`, byte-identical across eight Three.js apps and ported to Cesium. Why it has no toggle button; the `OrbitControls` hand-back bug that was in every app with free flight from day one; the four Cesium traps |
 | [**Realistic 3D terrain**](playbooks/realistic-3d-terrain.md) | What actually buys realism, in order of effect. Proving registration with facts that fall *out* of the data. Mesh quantisation, 390k instanced trees, land-cover rasters that get *smaller* as they get finer. And the bug class that survives the entire verification chain |
-| [**The three limitations**](playbooks/fabric-app-limits.md) | Server-side functions, the public URL, and capacity utilisation — measured rather than felt |
+| [**The three limitations**](playbooks/fabric-app-limits.md) | Server-side functions, the public URL, and capacity sizing — measured rather than felt, each with the route that works today |
 | [**Photoreal 3D maps**](playbooks/photoreal-3d-maps.md) | Renderer vs broker vs content, and why conflating them is where cost surprises come from. Includes the token-free route |
 | [**Choosing a front end**](playbooks/choosing-a-front-end.md) | Report, app or low-code — a decision guide rather than a scorecard |
 
 ## The calculator
 
-An **unofficial, untested** estimator for what an always-on Fabric App costs in capacity units:
+An **unofficial, untested** estimator for what a Fabric App consumes in capacity units and which SKU
+it fits into:
 <https://kornalexander.github.io/Fabric-App-Learnings/calculator/>
 
 > ⚠️ **Not an official Microsoft tool. Not tested. Not supported.** The CU coefficients are my own

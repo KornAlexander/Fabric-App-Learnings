@@ -139,9 +139,10 @@ thing can be cloned, tested in CI, and handed to someone else.</p>
   Entra-gated, but the layout does not. If the layout itself is confidential, pick another surface.</li>
 <li><strong>The hostname is platform-owned.</strong> No custom domain today, and it can change if the deployment
   binding is lost — keep <code>.deployments.json</code> and it stays put.</li>
-<li><strong>It's always on.</strong> Hosting an app turns a schedulable capacity into a 24/7 one. Size the capacity
-  to the app and this is cheap; leave it oversized and the uptime is what you're paying for, not the
-  CU the app consumes.</li>
+<li><strong>Size the capacity once.</strong> The app itself consumes very little — a typical small one peaks around
+  0.35 CU, which fits the smallest SKU. What lands on the bill is the queries behind it, the same
+  ones a report would fire. Worth sizing deliberately rather than assuming an app needs something
+  big.</li>
 <li><strong>You own the upgrade.</strong> Preview surfaces move, and there's no SLA behind code you wrote yourself.</li>
 </ul>
 <hr />

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Capacity calculator (unofficial, untested) · Fabric App Learnings</title>
-<meta name="description" content="An unofficial, untested estimator for what a Fabric App costs in capacity units — and what the pause you can no longer take is worth." />
+<meta name="description" content="An unofficial, untested estimator for what a Fabric App consumes in capacity units and which SKU it fits into." />
 <link rel="stylesheet" href="../assets/css/style.css" />
 </head>
 <body>
@@ -45,17 +45,17 @@
     </div>
 
     <h2 style="font-size:1.9rem;font-weight:800;color:var(--accent);margin:0 0 .5rem">
-      What does an always-on Fabric App actually cost?</h2>
+      Which capacity does a Fabric App actually need?</h2>
     <p class="lead" style="max-width:70ch">
       Four groups of plain questions → an expected CU consumption, the smallest capacity that survives
-      your peak, and the bill. Including the part almost nobody budgets for: a Fabric App
-      <strong>cannot be switched off</strong>, so it takes your pause button with it. Nothing is sent
-      anywhere — the whole thing runs in your browser and makes no network calls.
+      your peak, and what that costs per month. Most small apps land further down the SKU list than
+      people expect — a typical one peaks around 0.35 CU. Nothing is sent anywhere; the whole thing
+      runs in your browser and makes no network calls.
     </p>
 
     <p style="margin:0 0 1.5rem">
       <a class="btn btn-outline" href="tool.html" target="_blank" rel="noopener">Open full screen ↗</a>
-      <a class="btn btn-outline" href="../limitations.html">Read why it exists</a>
+      <a class="btn btn-outline" href="../limitations.html#3-capacity-sizing-worth-doing-once-properly">Read the sizing notes</a>
     </p>
 
     <iframe class="calc-frame" src="tool.html" title="Fabric App CU and capacity calculator"

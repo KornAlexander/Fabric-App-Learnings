@@ -112,14 +112,11 @@ input[type=range] { width:100%; accent-color: var(--cp-accent); margin-top:4px; 
 .bar span { display:block; min-width:0; transition:width .18s ease; }
 .bar .used { background: var(--cp-accent); }
 .bar .idle { background: var(--cp-border-strong); }
-.bar .pause { background: repeating-linear-gradient(45deg, var(--cp-warning), var(--cp-warning) 6px,
-  transparent 6px, transparent 12px); }
 .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:.78rem; color: var(--cp-text-muted); }
 .legend i { display:inline-block; width:11px; height:11px; border-radius:3px; margin-right:5px;
   vertical-align:-1px; }
 .legend .used { background: var(--cp-accent); }
 .legend .idle { background: var(--cp-border-strong); }
-.legend .pause { background: var(--cp-warning); }
 
 table { width:100%; border-collapse:collapse; font-size:.86rem; }
 th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--cp-border); }
@@ -150,11 +147,11 @@ a { color: var(--cp-link); }
 
 <header class="hero">
   <span class="kicker">Fabric Apps · CU &amp; Capacity Calculator</span>
-  <h1>What will my Fabric App burn — and what will that cost?</h1>
+  <h1>What will my Fabric App consume — and which capacity does it need?</h1>
   <p>
     Answer four groups of plain questions. You get an expected CU consumption, the smallest capacity
-    that survives your peak, and the bill — including the part almost nobody budgets for:
-    <strong>a Fabric App cannot be switched off</strong>, so it takes your pause button with it.
+    that survives your peak, and what that costs per month. Most small apps land further down the SKU
+    list than people expect.
   </p>
 </header>
 
@@ -364,10 +361,10 @@ a { color: var(--cp-link); }
 
 <!-- ================= STEP 4 ================= -->
 <div class="card">
-  <h2>4 · What it costs — and the pause you can't take</h2>
+  <h2>4 · What it costs</h2>
   <p class="lead">
-    A paused capacity serves the app an HTTP 500. So hosting an app converts a schedulable capacity
-    into a 24/7 one, and every cost lever the platform gives you is the thing that breaks it.
+    The capacity bill is driven by the SKU you run, not by the app on top of it. So the question that
+    matters is which SKU your peak actually needs — and for most apps that is a small one.
   </p>
 
   <div class="grid cols-3">
@@ -382,28 +379,10 @@ a { color: var(--cp-link); }
       <span class="hint">Measured, not a price list: Sweden Central ≈ 0.19, West US 3 ≈ 0.18.</span>
     </div>
     <div class="field">
-      <label for="hours">Hours in the month</label>
+      <label for="hours">Hours the capacity runs / month</label>
       <input type="number" id="hours" step="1" min="1" value="730" />
+      <span class="hint">730 = running continuously, which is the normal case.</span>
     </div>
-  </div>
-
-  <div class="grid cols-2" style="margin-top:6px">
-    <div class="field">
-      <div class="rangerow"><label for="upWith" style="margin:0">Uptime <em>with</em> an app hosted</label>
-        <span class="rangeval" id="upWithVal">91 %</span></div>
-      <input type="range" id="upWith" min="1" max="100" step="1" value="91" />
-    </div>
-    <div class="field">
-      <div class="rangerow"><label for="upWithout" style="margin:0">Uptime you could reach <em>without</em> one</label>
-        <span class="rangeval" id="upWithoutVal">26 %</span></div>
-      <input type="range" id="upWithout" min="0" max="100" step="1" value="26" />
-    </div>
-  </div>
-
-  <div class="callout">
-    Defaults are two real capacities in one tenant over the same week: the one hosting Fabric Apps ran
-    <strong>91 %</strong>, the one hosting none ran <strong>26 %</strong>. Same owner, same schedule.
-    The app is the whole difference.
   </div>
 </div>
 
@@ -414,26 +393,25 @@ a { color: var(--cp-link); }
     <div class="note" id="outBillNote"></div>
   </div>
   <div class="stat">
-    <div class="lbl">Cost of the pause you can't take</div>
-    <div class="val bad" id="outPause">$0</div>
-    <div class="note" id="outPauseNote"></div>
+    <div class="lbl">At the smallest SKU that fits</div>
+    <div class="val good" id="outFitCost">$0</div>
+    <div class="note" id="outFitCostNote"></div>
   </div>
   <div class="stat">
-    <div class="lbl">You pay this per CU-hour used</div>
-    <div class="val bad" id="outEff">$0</div>
-    <div class="note" id="outEffNote"></div>
+    <div class="lbl">Per user / month</div>
+    <div class="val" id="outPerUser">$0</div>
+    <div class="note" id="outPerUserNote"></div>
   </div>
 </div>
 
 <div class="card">
-  <h2>How full is the capacity you're paying for?</h2>
+  <h2>How much of the capacity does the app use?</h2>
   <div class="bar">
-    <span class="used" id="segUsed"></span><span class="idle" id="segIdle"></span><span class="pause" id="segPause"></span>
+    <span class="used" id="segUsed"></span><span class="idle" id="segIdle"></span>
   </div>
   <div class="legend">
-    <span><i class="used"></i>Used by the workload <strong id="legUsed"></strong></span>
-    <span><i class="idle"></i>Bought, idle, but you chose to be on <strong id="legIdle"></strong></span>
-    <span><i class="pause"></i>Bought, idle, and you <strong>could not</strong> turn it off <strong id="legPause"></strong></span>
+    <span><i class="used"></i>Used by this app <strong id="legUsed"></strong></span>
+    <span><i class="idle"></i>Left for everything else on the capacity <strong id="legIdle"></strong></span>
   </div>
   <p style="font-size:.86rem;color:var(--cp-text-muted);margin:12px 0 0" id="barNote"></p>
 </div>
@@ -582,8 +560,6 @@ a { color: var(--cp-link); }
     const m = model();
 
     $("peakPctVal").textContent = n("peakPct") + " %";
-    $("upWithVal").textContent = n("upWith") + " %";
-    $("upWithoutVal").textContent = n("upWithout") + " %";
 
     if (!skuTouched) $("sku").value = String(m.fitSku);
 
@@ -625,40 +601,33 @@ a { color: var(--cp-link); }
     const cu = Number($("sku").value);
     const rate = Math.max(0, n("rate")) * (1 - Math.min(60, Math.max(0, n("cResv"))) / 100);
     const hours = Math.max(1, n("hours"));
-    const upWith = n("upWith") / 100, upWithout = n("upWithout") / 100;
-    const activeHours = hours * upWith;
-    const unpausable = Math.max(0, hours * (upWith - upWithout));
+    const activeHours = hours;
     const bill = activeHours * cu * rate;
-    const pauseCost = unpausable * cu * rate;
+    const fitCost = activeHours * m.fitSku * rate;
     const availableCUh = cu * activeHours;
-    const effRate = m.totalCUh > 0 ? bill / m.totalCUh : Infinity;
+    const perUser = m.totalUsers > 0 ? bill / m.totalUsers : 0;
 
     $("outBill").textContent = usd(bill);
-    $("outBillNote").textContent = num(activeHours) + " active h × " + cu + " CU × " + usd(rate, 3);
-    $("outPause").textContent = usd(pauseCost);
-    $("outPauseNote").textContent = num(unpausable) + " h/month you cannot switch off · " +
-      usd(pauseCost * 12) + " a year";
-    if (isFinite(effRate)) {
-      $("outEff").textContent = usd(effRate);
-      $("outEffNote").textContent = "list is " + usd(rate, 3) + " — that is " +
-        num(rate > 0 ? effRate / rate : 0) + "× for every CU-hour you actually use";
-    } else { $("outEff").textContent = "—"; $("outEffNote").textContent = ""; }
+    $("outBillNote").textContent = num(activeHours) + " h × " + cu + " CU × " + usd(rate, 3) +
+      " — this is the capacity, not the app";
+    $("outFitCost").textContent = usd(fitCost);
+    $("outFitCostNote").textContent = cu === m.fitSku
+      ? "F" + m.fitSku + " covers your peak \u2014 you are already on it"
+      : "F" + m.fitSku + " covers your peak \u2014 " + usd(Math.max(0, bill - fitCost)) + " less per month";
+    $("outPerUser").textContent = usd(perUser, perUser < 1 ? 3 : 2);
+    $("outPerUserNote").textContent = num(m.totalUsers) + " users on the capacity bill above";
 
     const usedCUh = Math.min(m.totalCUh, availableCUh);
-    const unpausableCUh = Math.min(cu * unpausable, Math.max(0, availableCUh - usedCUh));
-    const idleCUh = Math.max(0, availableCUh - usedCUh - unpausableCUh);
     const wUsedReal = availableCUh > 0 ? usedCUh / availableCUh * 100 : 0;
     const wUsed = Math.max(wUsedReal, usedCUh > 0 ? 0.4 : 0);
-    const wPause = availableCUh > 0 ? unpausableCUh / availableCUh * 100 : 0;
     $("segUsed").style.width = wUsed + "%";
-    $("segPause").style.width = wPause + "%";
-    $("segIdle").style.width = Math.max(0, 100 - wUsed - wPause) + "%";
+    $("segIdle").style.width = Math.max(0, 100 - wUsed) + "%";
     $("legUsed").textContent = wUsedReal > 0 && wUsedReal < 0.01 ? "< 0.01 %" : pct(wUsedReal, wUsedReal < 1 ? 2 : 1);
-    $("legIdle").textContent = pct(availableCUh > 0 ? idleCUh / availableCUh * 100 : 0);
-    $("legPause").textContent = pct(wPause);
+    $("legIdle").textContent = pct(availableCUh > 0 ? (availableCUh - usedCUh) / availableCUh * 100 : 0);
     $("barNote").textContent =
-      "Your entire workload is " + num(m.totalCUh, 1) + " of the " + num(availableCUh) +
-      " CU-hours you are billed for. The hatched block is what you bought, did not use, and could not switch off.";
+      "This app is " + num(m.totalCUh, 1) + " of the " + num(availableCUh) +
+      " CU-hours an F" + cu + " provides in the month. The rest is available for reports, pipelines, " +
+      "models and everything else already running on the capacity.";
 
     const sb = $("skuBody"); sb.textContent = "";
     let firstFit = true;
@@ -698,9 +667,9 @@ a { color: var(--cp-link); }
       "capacity-hours   = CU-seconds / 3600 = " + num(m.totalCUh, 1) + " CU-hours",
       "average CU       = CU-seconds / seconds in month = " + num(m.avgCU, 2) + " CU",
       "",
-      "bill             = active hours x SKU CU x rate = " + usd(bill),
-      "unpausable       = hours x (uptime_with - uptime_without) = " + num(unpausable) + " h",
-      "pause you cannot take = " + usd(pauseCost) + " / month"
+      "bill             = hours x SKU CU x rate = " + usd(bill),
+      "smallest fit     = hours x " + m.fitSku + " CU x rate = " + usd(fitCost) + "   (F" + m.fitSku + ")",
+      "share of capacity = " + num(m.totalCUh, 1) + " / " + num(availableCUh) + " CU-hours"
     ].join("\n");
   }
 

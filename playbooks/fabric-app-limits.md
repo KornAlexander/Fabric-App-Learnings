@@ -14,7 +14,7 @@ they'll find it in week two anyway — and you gain the right to be believed abo
 |---|---|---|
 | **Rayfin functions** | 🟡 not there yet | "Server-side Rayfin functions aren't available yet. Use a Fabric User Data Function or an Azure Container App — both proven, both cheap." |
 | **The public URL** | 🟡 by design — design around it | "The shell is served publicly and the hostname is platform-owned. The data stays Entra-gated. If your *layout* itself is confidential, pick a different surface." |
-| **Pricing / utilisation** | 🟡 real, and quantifiable | "The app barely uses CU. The thing to plan for is that it's always on — so the capacity behind it needs to be too." |
+| **Capacity sizing** | 🟡 worth doing once, properly | "The app itself barely uses CU — a typical small one peaks at 0.35 CU and fits an F2. Size the capacity to the workload and it's very cheap." |
 
 ---
 
@@ -110,43 +110,35 @@ the day before a talk.
 
 ---
 
-## 3 · Pricing / capacity utilisation — 🟡 real, and quantifiable
+## 3 · Capacity sizing — 🟡 worth doing once, properly
 
 ### The sharp version
-A Fabric App is **remarkably cheap to run**. The thing to plan for is that it's **always on**, and
-the capacity behind it has to be too.
-
-A paused capacity means the app doesn't answer: root serves `HTTP 500`, lazy chunks 500, UDF invokes
-500. `rayfin up` returns `404 The requested endpoint does not exist` before it ever surfaces
-`CapacityNotActive`. After a resume it serves 408s for another 20–30 s while the workload warms.
-All of that is consistent — it's simply what "the capacity is off" looks like from the browser.
-
-**So hosting an app turns a schedulable capacity into a 24/7 one. That's a sizing decision, and it's
-worth making deliberately rather than discovering it on the invoice.**
-
-### The evidence — two capacities, one tenant, same week
-
-| | hosts Fabric Apps | hosts none |
-|---|---|---|
-| Uptime | **91 %** | **26 %** |
-| Cost that week | **$714.53** (74 % of all Azure spend) | $196.33 |
-
-Same owner, same schedule, same Logic Apps. **The app is the entire difference.** The daily 18:00
-pause is undone within minutes, every day, because the app has to answer.
+A Fabric App is **remarkably cheap to run**. The front end itself consumes almost nothing — what
+shows up on the bill is the queries behind it, and those are the same queries a report would fire.
+The only thing worth doing deliberately is **sizing the capacity to the workload** rather than
+assuming an app needs a big one.
 
 ### The arithmetic
 ```
-capacity-hours   = CU-seconds / (SKU CU × 3600)
-utilisation      = capacity-hours used / hours the capacity was Active
-unpausable hours = hours × (uptime_with_app − uptime_without_app)
-cost of the pause you can't take = unpausable hours × SKU CU × rate
+capacity-hours = CU-seconds / (SKU CU × 3600)
+utilisation    = capacity-hours used / hours the capacity was Active
+peak CU        = concurrent users × burst CU / smoothing window (300 s)
 ```
 
-On a typical small app (200 users, Direct Lake, ~12 opening queries, 3 % concurrency): peak
-**0.35 CU** → fits an **F2**. Put that same app on an F32 and roughly **$2,885/month** of the bill is
-buying uptime you'd otherwise have paused, at an effective **$3,635 per CU-hour actually used**
-versus $0.19 list. The lesson isn't "apps are expensive" — it's **size the capacity to the app, and
-the economics are excellent**.
+The number that decides your SKU is **peak CU**, not monthly total. Fabric smooths bursts over a
+300-second window, which is why a short spike from a handful of simultaneous users flattens into
+something very small.
 
-✅ **If the workload already runs a 24/7 capacity for other reasons**, the marginal cost of the app is
-near zero — say so. That's the common case, and it's where this question disappears entirely.
+### What that looks like on a real app
+A typical small app — **200 users**, Direct Lake, ~12 queries on open, 3 % concurrency — peaks at
+**0.35 CU**. That fits an **F2**, the smallest SKU there is, with room to spare.
+
+That's the headline: an interactive, custom-built front end on analytics-scale data, inside the
+smallest capacity Fabric sells. Size it to the workload and the economics are excellent.
+
+✅ **And if a capacity is already running for other reasons** — which is usually the case, since
+reports, pipelines and models are sitting on it anyway — the marginal cost of adding an app is
+**effectively nothing**. That's the common case, and it's worth saying plainly.
+
+⚠️ Measure rather than trust an estimate: the **Fabric Capacity Metrics** app gives you the real
+CU-seconds for your own workload. Anything else, including my calculator, is a rough shape.

@@ -83,9 +83,10 @@ Being clear about this is what makes the rest credible — and all five have a k
   Entra-gated, but the layout does not. If the layout itself is confidential, pick another surface.
 - **The hostname is platform-owned.** No custom domain today, and it can change if the deployment
   binding is lost — keep `.deployments.json` and it stays put.
-- **It's always on.** Hosting an app turns a schedulable capacity into a 24/7 one. Size the capacity
-  to the app and this is cheap; leave it oversized and the uptime is what you're paying for, not the
-  CU the app consumes.
+- **Size the capacity once.** The app itself consumes very little — a typical small one peaks around
+  0.35 CU, which fits the smallest SKU. What lands on the bill is the queries behind it, the same
+  ones a report would fire. Worth sizing deliberately rather than assuming an app needs something
+  big.
 - **You own the upgrade.** Preview surfaces move, and there's no SLA behind code you wrote yourself.
 
 ---
